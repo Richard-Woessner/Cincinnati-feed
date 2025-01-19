@@ -29,6 +29,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
           uri: create.uri,
           cid: create.cid,
           indexedAt: new Date().toISOString(),
+          author: create.author, // Access the DID directly
         }
       })
 
@@ -38,6 +39,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
         .where('uri', 'in', postsToDelete)
         .execute()
     }
+
     if (postsToCreate.length > 0) {
       await this.db
         .insertInto('post')
@@ -45,5 +47,23 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
         .onConflict((oc) => oc.doNothing())
         .execute()
     }
+
+    // Add cursor update after handling posts
+    await this.db
+      .updateTable('sub_state')
+      .set({ cursor: evt.seq })
+      .where('service', '=', this.service)
+      .execute()
+  }
+
+  async getCursor(): Promise<{ cursor?: number }> {
+    const res = await this.db
+      .selectFrom('sub_state')
+      .selectAll()
+      .where('service', '=', this.service)
+      .executeTakeFirst()
+
+    // Return an object with the cursor property to match the base class type
+    return { cursor: res?.cursor }
   }
 }

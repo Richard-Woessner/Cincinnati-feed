@@ -14,6 +14,7 @@ migrations['001'] = {
       .createTable('post')
       .addColumn('uri', 'varchar', (col) => col.primaryKey())
       .addColumn('cid', 'varchar', (col) => col.notNull())
+      .addColumn('author', 'varchar', (col) => col.notNull())
       .addColumn('indexedAt', 'varchar', (col) => col.notNull())
       .execute()
     await db.schema
@@ -21,9 +22,15 @@ migrations['001'] = {
       .addColumn('service', 'varchar', (col) => col.primaryKey())
       .addColumn('cursor', 'integer', (col) => col.notNull())
       .execute()
+    await db.schema
+      .createTable('actor')
+      .addColumn('did', 'varchar', (col) => col.primaryKey())
+      .addColumn('description', 'varchar')
+      .execute()
   },
   async down(db: Kysely<unknown>) {
     await db.schema.dropTable('post').execute()
     await db.schema.dropTable('sub_state').execute()
+    await db.schema.dropTable('actor').execute()
   },
 }
