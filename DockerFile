@@ -1,0 +1,31 @@
+FROM node:18-slim
+
+# Install git
+RUN apt-get update && apt-get install -y git
+
+# Create app directory
+WORKDIR /app
+
+# Clone repository
+RUN git clone https://github.com/Richard-Woessner/Cincinnati-feed.git .
+
+# Install app dependencies
+RUN yarn install --frozen-lockfile
+
+# Build TypeScript
+RUN yarn build
+
+# Expose the port the app runs on
+EXPOSE 3000
+
+# Create volume for SQLite database
+VOLUME ["/app/data"]
+
+# Set environment variables
+ENV FEEDGEN_PORT=3000 \
+    FEEDGEN_LISTENHOST=0.0.0.0 \
+    FEEDGEN_SQLITE_LOCATION=/app/data/db.sqlite \
+    FEEDGEN_SUBSCRIPTION_ENDPOINT=wss://bsky.network
+
+# Start the app
+CMD ["yarn", "start"]
