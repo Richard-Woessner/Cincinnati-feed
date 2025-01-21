@@ -24,9 +24,13 @@ export const handler = async (ctx: AppContext, params: QueryParams) => {
   }
   const res = await builder.execute()
 
-  const feed = res.map((row) => ({
-    post: row.uri,
-  }))
+  const feed = res.forEach((row) => {
+    console.log(row)
+
+    return {
+      post: row.uri,
+    }
+  })
 
   let cursor: string | undefined
   const last = res.at(-1)
