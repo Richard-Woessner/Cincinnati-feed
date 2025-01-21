@@ -8,12 +8,6 @@ export const handler = async (ctx: AppContext, params: QueryParams) => {
   let builder = ctx.db
     .selectFrom('post')
     .selectAll()
-    .innerJoin('actor', 'actor.did', 'post.author')
-    // Filter to only include posts where the user's profile description
-    // matches one of the search terms ('cincinnati', 'cinci', or 'cincy')
-    .where('actor.description', 'ilike', '%cincinnati%')
-    .where('actor.description', 'ilike', '%cinci%')
-    .where('actor.description', 'ilike', '%cincy%')
     .orderBy('indexedAt', 'desc')
     .orderBy('cid', 'desc')
     .limit(params.limit)
@@ -33,20 +27,6 @@ export const handler = async (ctx: AppContext, params: QueryParams) => {
   if (last) {
     cursor = new Date(last.indexedAt).getTime().toString(10)
   }
-
-  // Then insert the posts with just the author reference
-  const postsToCreate = res.map((post) => ({
-    uri: post.uri,
-    cid: post.cid,
-    indexedAt: post.indexedAt,
-    author: post.author, // Just store the DID as a string reference
-  }))
-
-  await ctx.db
-    .insertInto('post')
-    .values(postsToCreate)
-    .onConflict((oc) => oc.doNothing())
-    .execute()
 
   return {
     cursor,
