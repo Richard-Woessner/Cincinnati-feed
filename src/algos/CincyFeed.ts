@@ -1,17 +1,13 @@
-import { sql } from 'kysely'
 import { QueryParams } from '../lexicon/types/app/bsky/feed/getFeedSkeleton'
 import { AppContext } from '../config'
 
+// max 15 chars
 export const shortname = 'CincyFeed'
 
 export const handler = async (ctx: AppContext, params: QueryParams) => {
   let builder = ctx.db
     .selectFrom('post')
-    .innerJoin('actor', 'actor.did', 'post.author')
-    .where('actor.description', 'ilike', '%cincy%')
-    .where('actor.description', 'ilike', '%cincinnati%')
-    .where('actor.description', 'ilike', '%cinci%')
-    .selectAll('post')
+    .selectAll()
     .orderBy('indexedAt', 'desc')
     .orderBy('cid', 'desc')
     .limit(params.limit)
@@ -20,7 +16,6 @@ export const handler = async (ctx: AppContext, params: QueryParams) => {
     const timeStr = new Date(parseInt(params.cursor, 10)).toISOString()
     builder = builder.where('post.indexedAt', '<', timeStr)
   }
-
   const res = await builder.execute()
 
   const feed = res.map((row) => ({
