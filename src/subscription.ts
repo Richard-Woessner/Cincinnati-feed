@@ -15,8 +15,9 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
 
   constructor(db: Database, service: string) {
     super(db, service)
-    this.initializeAgent().then(() => {
-      this.seedActorsFromFile()
+    this.initializeAgent().then(async () => {
+      await this.seedActorsFromFile()
+      await this.cleanupNonCincinnatiPosts()
     })
   }
 
@@ -44,6 +45,18 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
       console.log('Successfully seeded actors from file')
     } catch (err) {
       console.error('Failed to seed actors:', err)
+    }
+  }
+
+  private async cleanupNonCincinnatiPosts() {
+    try {
+      await this.db
+        .deleteFrom('post')
+        .where('author', 'not in', this.db.selectFrom('actor').select('did'))
+        .execute()
+      console.log('Cleaned up non-Cincinnati posts')
+    } catch (err) {
+      console.error('Failed to cleanup posts:', err)
     }
   }
 
