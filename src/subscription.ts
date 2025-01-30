@@ -19,22 +19,14 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
 
     const postsToDelete = ops.posts.deletes.map((del) => del.uri)
     const postsToCreate = ops.posts.creates
-      .filter((create) => {
-        // only alf-related posts
-        let text = create.record.text.toLowerCase()
-        return (
-          text.includes('cincinnati') ||
-          text.includes('cincy') ||
-          text.includes('cinci')
-        )
-      })
+      .filter((create) => /cincy|cincinnati|cinci/i.test(create.record.text))
       .map((create) => {
-        // map alf-related posts to a db row
         return {
           uri: create.uri,
           cid: create.cid,
           indexedAt: new Date().toISOString(),
-          author: create.author, // Access the DID directly
+          author: create.author,
+          text: create.record.text,
         }
       })
 
