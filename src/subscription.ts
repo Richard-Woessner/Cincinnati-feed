@@ -25,12 +25,15 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
   private agent = new BskyAgent({ service: 'https://bsky.social' })
   private fileHandle: fs.FileHandle | null = null
 
+  private blockedUsers: string[] = [] // Stores blocked users
+
   private followersMap: FollowerMap[] = [] // Stores followers
   private followingMap: FollowerMap[] = [] // Stores following
 
   constructor(db: Database, service: string) {
     super(db, service)
     this.initializeAgent().then(async () => {
+      await this.getBlockedUsers()
       await this.seedActorsFromFile()
       await this.populateFollowers()
       await this.cleanupNonCincinnatiPosts()
@@ -38,6 +41,19 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
       await this.SearchForCincinnatiUsers()
       console.log('Finished populating followers and following lists.')
     })
+  }
+
+  // /blocked-users.txt
+  private async getBlockedUsers() {
+    try {
+      const filePath = path.join(process.cwd(), 'blocked-users.txt')
+      const fileContent = await fs.readFile(filePath, 'utf-8')
+      const actors = fileContent.trim().split('\n')
+
+      this.blockedUsers.push(...actors)
+    } catch (err) {
+      console.error('Failed to get blocked users:', err)
+    }
   }
 
   private async populateFollowers() {
@@ -242,8 +258,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
                 label.val === 'sexual' ||
                 label.val === 'nsfw:explicit' ||
                 label.val === 'adult' ||
-                label.val === 'graphic-media' ||
-
+                label.val === 'graphic-media',
             )
           ) {
             console.log(`Blocked NSFW/Adult content post: ${create.uri}`)
@@ -288,7 +303,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
           .where('did', '=', create.author)
           .executeTakeFirst()
 
-        if (actor && !actor.blocked) {
+        if (actor && !actor.blocked && !this.blockedUsers.includes(actor.did)) {
           postsToCreate.push({
             uri: create.uri,
             cid: create.cid,
