@@ -10,18 +10,23 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
 
     const ops = await getOpsByType(evt)
 
-    // This logs the text of every post off the firehose.
-    // Just for fun :)
-    // Delete before actually using
-    for (const post of ops.posts.creates) {
-      //console.log(post.record.text)
-    }
+    // // This logs the text of every post off the firehose.
+    // // Just for fun :)
+    // // Delete before actually using
+    // for (const p of ops.profiles.creates) {
+    //   console.log(p.record.description)
+    // }
 
     const postsToDelete = ops.posts.deletes.map((del) => del.uri)
     const postsToCreate = ops.posts.creates
       .filter((create) => {
         // only alf-related posts
-        return create.record.text.toLowerCase().includes('alf')
+        let text = create.record.text.toLowerCase()
+        return (
+          text.includes('cincinnati') ||
+          text.includes('cincy') ||
+          text.includes('cinci')
+        )
       })
       .map((create) => {
         // map alf-related posts to a db row
