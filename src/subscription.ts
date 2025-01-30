@@ -11,7 +11,7 @@ import {
 import { FirehoseSubscriptionBase, getOpsByType } from './util/subscription'
 import * as fs from 'fs/promises'
 import { Database } from './db'
-import { DatabaseSchema } from './db/schema'
+import { Actor, DatabaseSchema } from './db/schema'
 import path from 'path'
 import { ProfileView } from '@atproto/api/dist/client/types/app/bsky/actor/defs'
 import { SelfLabels } from './lexicon/types/com/atproto/label/defs'
@@ -280,7 +280,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
           .where('did', '=', create.author)
           .executeTakeFirst()
 
-        if (actor) {
+        if (actor && !actor.blocked) {
           postsToCreate.push({
             uri: create.uri,
             cid: create.cid,
