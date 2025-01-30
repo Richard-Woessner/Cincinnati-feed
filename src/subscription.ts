@@ -100,14 +100,6 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
                 `${create.author}\n`,
               )
             }
-
-            postsToCreate.push({
-              uri: create.uri,
-              cid: create.cid,
-              indexedAt: new Date().toISOString(),
-              author: create.author,
-              text: create.record.text,
-            })
           } catch (err) {
             console.error('Error processing post:', err)
           }
