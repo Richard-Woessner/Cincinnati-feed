@@ -6,6 +6,7 @@ import {
   AppBskyActorDefs,
   AppBskyActorGetProfiles,
   BskyAgent,
+  ComAtprotoLabelDefs,
 } from '@atproto/api'
 import { FirehoseSubscriptionBase, getOpsByType } from './util/subscription'
 import * as fs from 'fs/promises'
@@ -13,6 +14,7 @@ import { Database } from './db'
 import { DatabaseSchema } from './db/schema'
 import path from 'path'
 import { ProfileView } from '@atproto/api/dist/client/types/app/bsky/actor/defs'
+import { SelfLabels } from './lexicon/types/com/atproto/label/defs'
 
 interface FollowerMap {
   userDid: string
@@ -216,6 +218,34 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
         // if /cincy|cincinnati|cinci/i.test(create.record.text)
 
         if (!create.record.text) return
+
+        const postLabels:
+          | ComAtprotoLabelDefs.SelfLabels
+          | { $type: string; [k: string]: unknown }
+          | undefined = create.record.labels
+
+        if (postLabels != undefined) {
+          const labels = postLabels.values as
+            | ComAtprotoLabelDefs.SelfLabel[]
+            | undefined
+
+          console.log(postLabels)
+          if (
+            postLabels.$type === 'com.atproto.label.defs#selfLabels' &&
+            labels != undefined &&
+            labels.some(
+              (label) =>
+                label.val === 'porn' ||
+                label.val === 'nsfw' ||
+                label.val === 'sexual' ||
+                label.val === 'nsfw:explicit' ||
+                label.val === 'adult',
+            )
+          ) {
+            console.log(`Blocked NSFW/Adult content post: ${create.uri}`)
+            return // Skip adult content
+          }
+        }
 
         // If post contains cincy, cincinnati, or cinci, check the author's bio, and if it contains cincy, cincinnati, or cinci, add to actor table
         if (this.isCincinnatiUser(create.record.text)) {
