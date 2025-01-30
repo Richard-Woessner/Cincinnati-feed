@@ -4,6 +4,7 @@ export interface DatabaseSchema {
     cid: string
     indexedAt: string
     author: string
+    text: string // Add text column
   }
   actor: {
     did: string
