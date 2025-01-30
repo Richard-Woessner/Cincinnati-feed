@@ -21,6 +21,15 @@ interface FollowerMap {
   followers: AppBskyActorDefs.ProfileView[]
 }
 
+// Create interface for post data validation
+interface ValidPostData {
+  uri: string
+  cid: string
+  indexedAt: string
+  author: string
+  text: string
+}
+
 export class FirehoseSubscription extends FirehoseSubscriptionBase {
   private agent = new BskyAgent({ service: 'https://bsky.social' })
   private fileHandle: fs.FileHandle | null = null
@@ -216,6 +225,22 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
     })
   }
 
+  // Add validation function
+  private validatePostData(post: any): ValidPostData | null {
+    try {
+      return {
+        uri: String(post.uri),
+        cid: String(post.cid),
+        indexedAt: String(post.indexedAt),
+        author: String(post.author),
+        text: String(post.record.text || ''),
+      }
+    } catch (err) {
+      console.error('Invalid post data:', err)
+      return null
+    }
+  }
+
   async handleEvent(evt: RepoEvent) {
     if (!isCommit(evt)) return
 
@@ -304,13 +329,17 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
           .executeTakeFirst()
 
         if (actor && !actor.blocked && !this.blockedUsers.includes(actor.did)) {
-          postsToCreate.push({
+          const validPost = this.validatePostData({
             uri: create.uri,
             cid: create.cid,
             indexedAt: new Date().toISOString(),
             author: create.author,
             text: create.record.text,
           })
+
+          if (validPost) {
+            postsToCreate.push(validPost)
+          }
         }
       }),
     )
