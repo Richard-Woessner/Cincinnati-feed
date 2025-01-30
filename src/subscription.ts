@@ -21,6 +21,8 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
     const postsToCreate = ops.posts.creates
       .filter((create) => /cincy|cincinnati|cinci/i.test(create.record.text))
       .map((create) => {
+        console.log(create.record.text)
+
         return {
           uri: create.uri,
           cid: create.cid,
