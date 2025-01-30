@@ -2,23 +2,142 @@ import {
   OutputSchema as RepoEvent,
   isCommit,
 } from './lexicon/types/com/atproto/sync/subscribeRepos'
-import { BskyAgent } from '@atproto/api'
+import {
+  AppBskyActorDefs,
+  AppBskyActorGetProfiles,
+  BskyAgent,
+} from '@atproto/api'
 import { FirehoseSubscriptionBase, getOpsByType } from './util/subscription'
 import * as fs from 'fs/promises'
 import { Database } from './db'
 import { DatabaseSchema } from './db/schema'
 import path from 'path'
+import { ProfileView } from '@atproto/api/dist/client/types/app/bsky/actor/defs'
+
+interface FollowerMap {
+  userDid: string
+  followers: AppBskyActorDefs.ProfileView[]
+}
 
 export class FirehoseSubscription extends FirehoseSubscriptionBase {
   private agent = new BskyAgent({ service: 'https://bsky.social' })
   private fileHandle: fs.FileHandle | null = null
 
+  private followersMap: FollowerMap[] = [] // Stores followers
+  private followingMap: FollowerMap[] = [] // Stores following
+
   constructor(db: Database, service: string) {
     super(db, service)
     this.initializeAgent().then(async () => {
       await this.seedActorsFromFile()
+      await this.populateFollowers()
       await this.cleanupNonCincinnatiPosts()
+
+      await this.SearchForCincinnatiUsers()
+      console.log('Finished populating followers and following lists.')
     })
+  }
+
+  private async populateFollowers() {
+    try {
+      const actors = await this.db.selectFrom('actor').select(['did']).execute()
+
+      for (const { did } of actors) {
+        const followers = await this.fetchFollowers(did)
+        const following = await this.fetchFollowing(did)
+
+        this.followersMap.push(followers)
+        this.followingMap.push(following)
+      }
+
+      console.log('Successfully populated followers and following lists')
+    } catch (err) {
+      console.error('Failed to populate followers:', err)
+    }
+  }
+
+  private async fetchFollowers(did: string): Promise<FollowerMap> {
+    try {
+      const { data } = await this.agent.api.app.bsky.graph.getFollowers({
+        actor: did,
+        limit: 100, // Adjust as needed
+      })
+
+      return {
+        userDid: did,
+        followers: data.followers,
+      }
+    } catch (err) {
+      console.error(`Failed to fetch followers for ${did}:`, err)
+      return { userDid: did, followers: [] }
+    }
+  }
+
+  private async fetchFollowing(did: string): Promise<FollowerMap> {
+    try {
+      const { data } = await this.agent.api.app.bsky.graph.getFollows({
+        actor: did,
+        limit: 100, // Adjust as needed
+      })
+
+      return {
+        userDid: did,
+        followers: data.follows,
+      }
+    } catch (err) {
+      console.error(`Failed to fetch following for ${did}:`, err)
+      return { userDid: did, followers: [] }
+    }
+  }
+
+  private chunkArray<T>(array: T[], size: number): T[][] {
+    return Array.from({ length: Math.ceil(array.length / size) }, (_, i) =>
+      array.slice(i * size, i * size + size),
+    )
+  }
+
+  private async fetchProfiles(dids: string[]) {
+    const chunks = this.chunkArray(dids, 25)
+    const profiles: AppBskyActorDefs.ProfileView[] = []
+
+    for (const chunk of chunks) {
+      try {
+        const response = await this.agent.getProfiles({ actors: chunk })
+        profiles.push(...response.data.profiles)
+      } catch (err) {
+        console.error('Failed to fetch profiles chunk:', err)
+      }
+    }
+
+    return profiles
+  }
+
+  private async SearchForCincinnatiUsers() {
+    for (const followers of this.followersMap) {
+      const dids = followers.followers.map((f) => f.did)
+      const profiles = await this.fetchProfiles(dids)
+
+      for (const profile of profiles) {
+        if (!profile.description) continue
+
+        const exists = await this.db
+          .selectFrom('actor')
+          .selectAll()
+          .where('did', '=', profile.did)
+          .executeTakeFirst()
+
+        if (!exists && this.isCincinnatiUser(profile.description)) {
+          await this.db
+            .insertInto('actor')
+            .values({
+              did: profile.did,
+              description: profile.description,
+            })
+            .onConflict((oc) => oc.doNothing())
+            .execute()
+        }
+      }
+    }
   }
 
   private async seedActorsFromFile() {
@@ -46,6 +165,16 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
     } catch (err) {
       console.error('Failed to seed actors:', err)
     }
+  }
+
+  private isCincinnatiUser(bio: string | null): boolean {
+    let isCincinnati = Boolean(bio && /cincy|cincinnati|cinci/i.test(bio))
+
+    if (isCincinnati) {
+      console.log('Cincinnati User:', bio)
+    }
+
+    return isCincinnati
   }
 
   private async cleanupNonCincinnatiPosts() {
@@ -89,11 +218,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
         if (!create.record.text) return
 
         // If post contains cincy, cincinnati, or cinci, check the author's bio, and if it contains cincy, cincinnati, or cinci, add to actor table
-        if (
-          create.record.text.includes('cincy') ||
-          create.record.text.includes('cincinnati') ||
-          create.record.text.includes('cinci')
-        ) {
+        if (this.isCincinnatiUser(create.record.text)) {
           try {
             const profile = await this.agent.getProfile({
               actor: create.author,
