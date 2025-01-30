@@ -134,6 +134,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
             .values({
               did: profile.did,
               description: profile.description,
+              blocked: false,
             })
             .onConflict((oc) => oc.doNothing())
             .execute()
@@ -156,6 +157,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
             .values({
               did: did,
               description: profile.data.description || '',
+              blocked: false,
             })
             .onConflict((oc) => oc.doNothing())
             .execute()
@@ -239,7 +241,9 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
                 label.val === 'nsfw' ||
                 label.val === 'sexual' ||
                 label.val === 'nsfw:explicit' ||
-                label.val === 'adult',
+                label.val === 'adult' ||
+                label.val === 'graphic-media' ||
+
             )
           ) {
             console.log(`Blocked NSFW/Adult content post: ${create.uri}`)
@@ -259,7 +263,11 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
               // Add to actor table
               await this.db
                 .insertInto('actor')
-                .values({ did: create.author, description: bio })
+                .values({
+                  did: create.author,
+                  description: bio,
+                  blocked: false,
+                })
                 .onConflict((oc) => oc.doNothing())
                 .execute()
 
