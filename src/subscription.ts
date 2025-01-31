@@ -241,6 +241,43 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
     }
   }
 
+  private isString(value: unknown): value is string {
+    return typeof value === 'string'
+  }
+
+  private sanitizeString(value: unknown): string {
+    // Convert non-string values to empty strings or stringified JSON
+    if (this.isString(value)) {
+      // Optionally remove line breaks that can cause issues
+      return value.replace(/\r?\n|\n/g, ' ')
+    }
+    return ''
+  }
+
+  private async handleCincinnatiAuthor(did: string) {
+    try {
+      const profile = await this.agent.getProfile({ actor: did })
+      const bioRaw = profile.data.description
+      const bio = this.sanitizeString(bioRaw)
+
+      // Insert the actor row with proper types
+      await this.db
+        .insertInto('actor')
+        .values({
+          did: this.sanitizeString(did), // Ensure DID is a string
+          description: bio, // Ensure it's a plain string
+          blocked: false, // Kysely should handle booleans in SQLite
+        })
+        .onConflict((oc) => oc.doNothing())
+        .execute()
+
+      // Optionally append to file if needed
+      await fs.appendFile('./cincinnati-users.txt', `${did}\n`)
+    } catch (err) {
+      console.error('Error processing author:', err)
+    }
+  }
+
   async handleEvent(evt: RepoEvent) {
     if (!isCommit(evt)) return
 
@@ -293,32 +330,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
 
         // If post contains cincy, cincinnati, or cinci, check the author's bio, and if it contains cincy, cincinnati, or cinci, add to actor table
         if (this.isCincinnatiUser(create.record.text)) {
-          try {
-            const profile = await this.agent.getProfile({
-              actor: create.author,
-            })
-            const bio = profile.data.description
-
-            if (bio && /cincy|cincinnati|cinci/i.test(bio)) {
-              // Add to actor table
-              await this.db
-                .insertInto('actor')
-                .values({
-                  did: create.author,
-                  description: bio,
-                  blocked: false,
-                })
-                .onConflict((oc) => oc.doNothing())
-                .execute()
-
-              await fs.appendFile(
-                './cincinnati-users.txt',
-                `${create.author}\n`,
-              )
-            }
-          } catch (err) {
-            console.error('Error processing post:', err)
-          }
+          await this.handleCincinnatiAuthor(create.author)
         }
 
         // If post author is in actor table, add to post table
