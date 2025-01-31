@@ -257,7 +257,10 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
     // Use word boundaries \b to match whole words only
     const cincinnatiPattern = /\b(cincy|cincinnati|cinci)\b/i
 
-    let isCincinnati = cincinnatiPattern.test(bio)
+    let isCincinnati =
+      bio.includes('cincy') ||
+      bio.includes('cinci') ||
+      bio.includes('cincinnati')
 
     if (isCincinnati) {
       console.log('Cincinnati User:', bio)
