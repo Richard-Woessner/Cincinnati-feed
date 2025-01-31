@@ -201,14 +201,14 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
           console.log('Inserting actor:', {
             did: profile.did,
             description: this.sanitizeString(profile.description),
-            blocked: false,
+            blocked: 0,
           })
           await this.db
             .insertInto('actor')
             .values({
               did: profile.did,
               description: this.sanitizeString(profile.description),
-              blocked: false,
+              blocked: 0,
             })
             .onConflict((oc) => oc.doNothing())
             .execute()
@@ -236,7 +236,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
             .values({
               did: did,
               description: this.sanitizeString(profile.data.description || ''),
-              blocked: false,
+              blocked: 0,
             })
             .onConflict((oc) => oc.doNothing())
             .execute()
