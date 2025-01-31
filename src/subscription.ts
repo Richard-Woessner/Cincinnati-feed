@@ -252,7 +252,12 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
   }
 
   private isCincinnatiUser(bio: string | null): boolean {
-    let isCincinnati = Boolean(bio && /cincy|cincinnati|cinci/i.test(bio))
+    if (!bio) return false
+
+    // Use word boundaries \b to match whole words only
+    const cincinnatiPattern = /\b(cincy|cincinnati|cinci)\b/i
+
+    let isCincinnati = cincinnatiPattern.test(bio)
 
     if (isCincinnati) {
       console.log('Cincinnati User:', bio)
