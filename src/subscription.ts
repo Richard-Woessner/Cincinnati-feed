@@ -46,7 +46,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
       console.log('Agent initialized.')
       await this.getBlockedUsers()
 
-      // await this.SearchForCincinnatiUsers()
+      await this.SearchForCincinnatiUsers()
       await this.cleanupNonCincinnatiPosts()
       console.log('Finished populating followers and following lists.')
     })
@@ -175,6 +175,10 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
 
   private async SearchForCincinnatiUsers() {
     console.log('Searching for Cincinnati users...')
+
+    await this.seedActorsFromFile()
+    await this.populateFollowers()
+
     for (const followers of this.followersMap) {
       const dids = followers.followers.map((f) => f.did)
       console.log(`Processing ${dids.length} DIDs from followers.`)
@@ -257,6 +261,8 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
     // Use word boundaries \b to match whole words only
     const cincinnatiPattern = /\b(cincy|cincinnati|cinci)\b/i
 
+    bio = bio.toLowerCase()
+
     let isCincinnati =
       bio.includes('cincy') ||
       bio.includes('cinci') ||
@@ -272,8 +278,6 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
   private async cleanupNonCincinnatiPosts() {
     console.log('Cleaning up non-Cincinnati and blocked user posts...')
 
-    // await this.seedActorsFromFile()
-    // await this.populateFollowers()
     try {
       // Log the current state before deletion
       console.log('Preparing to delete posts...')
