@@ -269,20 +269,40 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
   private async cleanupNonCincinnatiPosts() {
     console.log('Cleaning up non-Cincinnati and blocked user posts...')
 
-    await this.seedActorsFromFile()
-    await this.populateFollowers()
+    // await this.seedActorsFromFile()
+    // await this.populateFollowers()
     try {
       // Log the current state before deletion
       console.log('Preparing to delete posts...')
 
       // Remove actors whose bio does not contain 'cincy', 'cincinnati', or 'cinci'
-      await this.db
-        .deleteFrom('actor')
-        .where('description', 'not like', '%cincy%')
-        .where('description', 'not like', '%cincinnati%')
-        .where('description', 'not like', '%cinci%')
+      const actors = await this.db
+        .selectFrom('actor')
+        .select(['did', 'description'])
         .execute()
 
+      console.log(
+        `Checking ${actors.length} actors for Cincinnati relevance...`,
+      )
+      const nonCincyDids = actors
+        .filter(
+          (actor) =>
+            !actor.description || !this.isCincinnatiUser(actor.description),
+        )
+        .map((actor) => actor.did)
+
+      console.log(
+        `Found ${nonCincyDids.length} non-Cincinnati actors to remove.`,
+      )
+
+      if (nonCincyDids.length > 0) {
+        await this.db
+          .deleteFrom('actor')
+          .where('did', 'in', nonCincyDids)
+          .execute()
+
+        console.log(`Removed ${nonCincyDids.length} non-Cincinnati actors.`)
+      }
       await this.db
         .deleteFrom('post')
         .where('author', 'not in', this.db.selectFrom('actor').select('did'))
