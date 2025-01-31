@@ -66,6 +66,17 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
 
       console.log(`Blocked users found: ${actors.length}`)
       this.blockedUsers.push(...actors)
+
+      // Block users in the actor table
+      for (const actor of actors) {
+        console.log(`Blocking actor: ${actor}`)
+        await this.db
+          .updateTable('actor')
+          .set({ blocked: 1 })
+          .where('did', '=', actor)
+          .execute()
+      }
+
       console.log('Blocked users successfully loaded.')
     } catch (err) {
       console.error('Failed to get blocked users:', err)
