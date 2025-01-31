@@ -279,6 +279,14 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
         )
         .execute()
 
+      // Remove actors whose bio does not contain 'cincy', 'cincinnati', or 'cinci'
+      await this.db
+        .deleteFrom('actor')
+        .where('description', 'not like', '%cincy%')
+        .where('description', 'not like', '%cincinnati%')
+        .where('description', 'not like', '%cinci%')
+        .execute()
+
       console.log('Cleaned up non-Cincinnati and blocked user posts.')
     } catch (err) {
       console.error('Failed to cleanup posts:', err)
