@@ -269,6 +269,14 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
       // Log the current state before deletion
       console.log('Preparing to delete posts...')
 
+      // Remove actors whose bio does not contain 'cincy', 'cincinnati', or 'cinci'
+      await this.db
+        .deleteFrom('actor')
+        .where('description', 'not like', '%cincy%')
+        .where('description', 'not like', '%cincinnati%')
+        .where('description', 'not like', '%cinci%')
+        .execute()
+
       await this.db
         .deleteFrom('post')
         .where('author', 'not in', this.db.selectFrom('actor').select('did'))
@@ -277,14 +285,6 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
           'in',
           this.db.selectFrom('actor').select('did').where('blocked', '=', 1),
         )
-        .execute()
-
-      // Remove actors whose bio does not contain 'cincy', 'cincinnati', or 'cinci'
-      await this.db
-        .deleteFrom('actor')
-        .where('description', 'not like', '%cincy%')
-        .where('description', 'not like', '%cincinnati%')
-        .where('description', 'not like', '%cinci%')
         .execute()
 
       console.log('Cleaned up non-Cincinnati and blocked user posts.')
@@ -452,7 +452,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
           .where('did', '=', create.author)
           .executeTakeFirst()
 
-        if (actor) {
+        if (actor != undefined) {
           console.log(`Author ${create.author} found in actor table.`)
           if (!actor.blocked && !this.blockedUsers.includes(actor.did)) {
             const validPost = this.validatePostData({
@@ -475,6 +475,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
             )
           }
         } else {
+          return
         }
       }),
     )
