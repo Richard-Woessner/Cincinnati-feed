@@ -44,10 +44,10 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
     this.initializeAgent().then(async () => {
       await this.getBlockedUsers()
       await this.seedActorsFromFile()
-      await this.populateFollowers()
+      // await this.populateFollowers()
       await this.cleanupNonCincinnatiPosts()
 
-      await this.SearchForCincinnatiUsers()
+      // await this.SearchForCincinnatiUsers()
       console.log('Finished populating followers and following lists.')
     })
   }
@@ -213,11 +213,18 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
 
   private async cleanupNonCincinnatiPosts() {
     try {
+      // Remove any posts whose author is not in the actor table *or* is blocked
       await this.db
         .deleteFrom('post')
         .where('author', 'not in', this.db.selectFrom('actor').select('did'))
+        .where(
+          'author',
+          'in',
+          this.db.selectFrom('actor').select('did').where('blocked', '=', true),
+        )
         .execute()
-      console.log('Cleaned up non-Cincinnati posts')
+
+      console.log('Cleaned up non-Cincinnati and blocked user posts')
     } catch (err) {
       console.error('Failed to cleanup posts:', err)
     }
@@ -261,22 +268,30 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
 
   private async handleCincinnatiAuthor(did: string) {
     try {
+      const existing = await this.db
+        .selectFrom('actor')
+        .select('did')
+        .where('did', '=', did)
+        .executeTakeFirst()
+
+      if (existing) {
+        console.log(`Actor ${did} already in table, skipping insert`)
+        return
+      }
+
       const profile = await this.agent.getProfile({ actor: did })
       const bioRaw = profile.data.description
       const bio = this.sanitizeString(bioRaw)
 
-      // Insert the actor row with proper types
       await this.db
         .insertInto('actor')
         .values({
-          did: this.sanitizeString(did), // Ensure DID is a string
-          description: bio, // Ensure it's a plain string
-          blocked: false, // Kysely should handle booleans in SQLite
+          did: this.sanitizeString(did),
+          description: bio,
+          blocked: false,
         })
-        .onConflict((oc) => oc.doNothing())
         .execute()
 
-      // Optionally append to file if needed
       await fs.appendFile('./cincinnati-users.txt', `${did}\n`)
     } catch (err) {
       console.error('Error processing author:', err)
