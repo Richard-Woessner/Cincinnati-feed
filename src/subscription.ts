@@ -343,7 +343,6 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
                 label.val === 'graphic-media',
             )
           ) {
-            console.log(`Blocked NSFW/Adult content post: ${create.uri}`)
             return // Skip adult content
           }
         }
@@ -371,6 +370,9 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
 
           if (validPost) {
             postsToCreate.push(validPost)
+          } else {
+            console.error('Invalid post data:', create)
+            return
           }
         }
       }),
