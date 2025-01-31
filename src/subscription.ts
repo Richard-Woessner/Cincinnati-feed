@@ -154,6 +154,11 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
           .executeTakeFirst()
 
         if (!exists && this.isCincinnatiUser(profile.description)) {
+          console.log('Inserting actor:', {
+            did: profile.did,
+            description: profile.description,
+            blocked: false,
+          })
           await this.db
             .insertInto('actor')
             .values({
