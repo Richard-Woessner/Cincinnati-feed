@@ -45,11 +45,9 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
     this.initializeAgent().then(async () => {
       console.log('Agent initialized.')
       await this.getBlockedUsers()
-      // await this.seedActorsFromFile()
-      // await this.populateFollowers()
       await this.cleanupNonCincinnatiPosts()
 
-      // await this.SearchForCincinnatiUsers()
+      await this.SearchForCincinnatiUsers()
       console.log('Finished populating followers and following lists.')
     })
   }
@@ -265,6 +263,9 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
 
   private async cleanupNonCincinnatiPosts() {
     console.log('Cleaning up non-Cincinnati and blocked user posts...')
+
+    await this.seedActorsFromFile()
+    await this.populateFollowers()
     try {
       // Log the current state before deletion
       console.log('Preparing to delete posts...')
