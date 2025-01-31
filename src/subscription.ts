@@ -252,7 +252,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
   }
 
   private isCincinnatiUser(bio: string | null): boolean {
-    if (!bio) return false
+    if (!bio || bio == '') return false
 
     // Use word boundaries \b to match whole words only
     const cincinnatiPattern = /\b(cincy|cincinnati|cinci)\b/i
@@ -363,6 +363,11 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
       console.log(`Fetched profile for DID: ${did}`)
       const bioRaw = profile.data.description
       const bio = this.sanitizeString(bioRaw)
+
+      if (!this.isCincinnatiUser(bio)) {
+        console.log(`Bio for ${did} does not contain Cincinnati. Skipping.`)
+        return
+      }
 
       // Convert boolean to integer
       const blockedInt = 0 // false
