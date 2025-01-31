@@ -55,7 +55,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
   // /blocked-users.txt
   private async getBlockedUsers() {
     try {
-      const filePath = path.join(process.cwd(), 'blocked-users.txt')
+      const filePath = path.join(process.cwd(), '/blocked-users.txt')
       const fileContent = await fs.readFile(filePath, 'utf-8')
       const actors = fileContent.trim().split('\n')
 
