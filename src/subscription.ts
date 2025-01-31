@@ -156,14 +156,14 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
         if (!exists && this.isCincinnatiUser(profile.description)) {
           console.log('Inserting actor:', {
             did: profile.did,
-            description: profile.description,
+            description: this.sanitizeString(profile.description),
             blocked: false,
           })
           await this.db
             .insertInto('actor')
             .values({
               did: profile.did,
-              description: profile.description,
+              description: this.sanitizeString(profile.description),
               blocked: false,
             })
             .onConflict((oc) => oc.doNothing())
@@ -251,12 +251,12 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
   }
 
   private sanitizeString(value: unknown): string {
-    // Convert non-string values to empty strings or stringified JSON
-    if (this.isString(value)) {
-      // Optionally remove line breaks that can cause issues
-      return value.replace(/\r?\n|\n/g, ' ')
-    }
-    return ''
+    if (typeof value !== 'string') return ''
+    // remove line breaks
+    let safe = value.replace(/\r?\n|\n/g, ' ')
+    // normalize & remove problematic codepoints
+    safe = safe.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    return safe
   }
 
   private async handleCincinnatiAuthor(did: string) {
