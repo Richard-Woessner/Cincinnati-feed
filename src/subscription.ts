@@ -45,9 +45,9 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
     this.initializeAgent().then(async () => {
       console.log('Agent initialized.')
       await this.getBlockedUsers()
-      await this.cleanupNonCincinnatiPosts()
 
-      await this.SearchForCincinnatiUsers()
+      // await this.SearchForCincinnatiUsers()
+      await this.cleanupNonCincinnatiPosts()
       console.log('Finished populating followers and following lists.')
     })
   }
