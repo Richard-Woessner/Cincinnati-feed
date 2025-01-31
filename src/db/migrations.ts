@@ -48,10 +48,10 @@ migrations['003'] = {
   async up(db: Kysely<unknown>) {
     await db.schema
       .alterTable('actor')
-      .addColumn('blocked', 'boolean', (col) => col.defaultTo(false))
+      .addColumn('blocked', 'integer', (col) => col.defaultTo(false))
       .execute()
   },
   async down(db: Kysely<unknown>) {
-    await db.schema.alterTable('actor').dropColumn('blocked').execute()
+    await db.schema.alterTable('actor').dropColumn('integer').execute()
   },
 }

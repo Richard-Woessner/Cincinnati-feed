@@ -9,7 +9,7 @@ export interface DatabaseSchema {
   actor: {
     did: string
     description: string
-    blocked: boolean
+    blocked: boolean | 0 | 1
   }
   sub_state: {
     // Add this missing table
@@ -33,5 +33,5 @@ export type SubState = {
 export type Actor = {
   did: string
   description: string
-  blocked: boolean
+  blocked: boolean | 0 | 1
 }
