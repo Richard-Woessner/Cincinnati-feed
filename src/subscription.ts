@@ -476,7 +476,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
 
     await this.db
       .updateTable('sub_state')
-      .set({ cursor: evt.seq })
+      .set({ cursor: parseInt(evt.seq.toString(), 10) })
       .where('service', '=', this.service)
       .execute()
   }
