@@ -18,5 +18,7 @@ export function sanitizeString(value: unknown): string {
 export function isCincinnatiUser(bio: string | null): boolean {
   if (!bio || bio == '') return false
   bio = bio.toLowerCase()
-  return /\b(cincy|cincinnati|cinci)\b/i.test(bio)
+  return (
+    bio.includes('cincinnati') || bio.includes('cincy') || bio.includes('cinci')
+  )
 }

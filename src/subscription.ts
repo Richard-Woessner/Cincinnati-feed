@@ -323,11 +323,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
 
   private async handleCincinnatiAuthor(did: string) {
     try {
-      const existing = await this.db
-        .selectFrom('actor')
-        .select('did')
-        .where('did', '=', did)
-        .executeTakeFirst()
+      const existing = this.cincinnatiUsers.find((actor) => actor.did === did)
 
       if (existing) return
 
@@ -339,14 +335,14 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
       await this.db
         .insertInto('actor')
         .values({
-          did: sanitizeString(did),
-          description: bio,
+          did: did,
+          description: sanitizeString(bio),
           blocked: 0,
         })
         .onConflict((oc) => oc.doNothing())
         .execute()
 
-      await fs.appendFile('./cincinnati-users.txt', `${did}\n`)
+      fs.appendFile('./cincinnati-users.txt', `${did}\n`)
     } catch (err) {
       console.error('Error processing author:', err)
     }
