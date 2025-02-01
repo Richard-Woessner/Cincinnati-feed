@@ -63,6 +63,19 @@ export class FeedGenerator {
 
   async start(): Promise<http.Server> {
     await migrateToLatest(this.db)
+    const row = await this.db
+      .selectFrom('sub_state')
+      .select('cursor')
+      .where('service', '=', this.cfg.subscriptionEndpoint)
+      .executeTakeFirst()
+
+    if (!row) {
+      await this.db
+        .insertInto('sub_state')
+        .values({ service: this.cfg.subscriptionEndpoint, cursor: 0 })
+        .execute()
+    }
+
     this.firehose.run(this.cfg.subscriptionReconnectDelay)
     this.server = this.app.listen(this.cfg.port, this.cfg.listenhost)
     await events.once(this.server, 'listening')
