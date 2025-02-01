@@ -474,13 +474,28 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
   }
 
   async getCursor(): Promise<{ cursor?: number }> {
-    const res = await this.db
-      .selectFrom('sub_state')
-      .selectAll()
-      .where('service', '=', this.service)
-      .executeTakeFirst()
+    console.log('Skipping old events, starting fresh...')
 
-    // Return an object with the cursor property to match the base class type
-    return { cursor: res?.cursor }
+    try {
+      // Get the latest event sequence from Bluesky (instead of using sub_state)
+      const { data } = await this.agent.api.app.bsky.feed.getFeedSkeleton({
+        feed: 'bsky.app', // A public Bluesky feed (any valid AT-URI feed)
+        limit: 1, // Fetch just 1 recent event
+      })
+
+      // Extract the latest event sequence number (if available)
+      const latestSeq = data?.feed?.[0]?.post?.split('/').pop() // Extract last part of AT-URI
+
+      if (!latestSeq || isNaN(Number(latestSeq))) {
+        console.warn('Could not fetch latest event. Using 0 as default.')
+        return { cursor: 0 } // If failed, fallback to 0
+      }
+
+      console.log(`Starting fresh from latest event: ${latestSeq}`)
+      return { cursor: Number(latestSeq) }
+    } catch (err) {
+      console.error('Failed to fetch latest event:', err)
+      return { cursor: 0 } // Fail-safe: Start from 0
+    }
   }
 }
