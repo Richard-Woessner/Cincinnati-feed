@@ -350,64 +350,68 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
 
   async handleEvent(evt: RepoEvent) {
     if (!isCommit(evt)) {
+      console.log('Event is not a commit, skipping...')
       return
     }
 
+    console.log('Processing event:', evt.seq)
     const ops = await getOpsByType(evt)
+    console.log('Posts to process:', {
+      creates: ops.posts.creates.length,
+      deletes: ops.posts.deletes.length,
+    })
 
     const postsToDelete = ops.posts.deletes.map((del) => del.uri)
-
     const postsToCreate: DatabaseSchema['post'][] = []
 
     await Promise.all(
       ops.posts.creates.map(async (create) => {
+        console.log('\nProcessing post:', create.uri)
+
         if (!create.record.text) {
+          console.log('Post has no text, skipping')
           return
         }
 
-        const postLabels:
-          | ComAtprotoLabelDefs.SelfLabels
-          | { $type: string; [k: string]: unknown }
-          | undefined = create.record.labels
-
-        if (postLabels != undefined) {
-          console.log('Post labels:', postLabels)
+        const postLabels = create.record.labels
+        if (postLabels) {
+          console.log('Post labels found:', postLabels)
           const labels = postLabels.values as
             | ComAtprotoLabelDefs.SelfLabel[]
             | undefined
 
           if (
             postLabels.$type === 'com.atproto.label.defs#selfLabels' &&
-            labels != undefined &&
-            labels.some(
-              (label) =>
-                label.val === 'porn' ||
-                label.val === 'nsfw' ||
-                label.val === 'sexual' ||
-                label.val === 'nsfw:explicit' ||
-                label.val === 'adult' ||
-                label.val === 'graphic-media',
+            labels?.some((label) =>
+              [
+                'porn',
+                'nsfw',
+                'sexual',
+                'nsfw:explicit',
+                'adult',
+                'graphic-media',
+              ].includes(label.val),
             )
           ) {
-            console.log(`Post ${create.uri} contains blocked labels. Skipping.`)
-            return // Skip adult content
+            console.log('Post contains blocked labels, skipping')
+            return
           }
         }
 
         const actor = this.getAuthor(create.author)
+        console.log('Author check:', {
+          did: create.author,
+          foundInDB: !!actor,
+          isBlocked: actor?.blocked,
+          inBlockedList: this.blockedUsers.includes(create.author),
+        })
 
-        console.log(actor)
-
-        // If post contains cincy, cincinnati, or cinci, check the author's bio, and if it contains cincy, cincinnati, or cinci, add to actor table
         if (!actor && isCincinnatiUser(create.record.text)) {
-          console.log(
-            `Post ${create.uri} identified as Cincinnati user content.`,
-          )
+          console.log('New Cincinnati user found in post:', create.record.text)
           await this.handleCincinnatiAuthor(create.author)
         }
 
-        if (actor != undefined) {
-          console.log(`Author ${create.author} found in actor table.`)
+        if (actor) {
           if (!actor.blocked && !this.blockedUsers.includes(actor.did)) {
             const validPost = this.validatePostData({
               uri: create.uri,
@@ -418,52 +422,50 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
             })
 
             if (validPost) {
+              console.log('Valid post ready for insertion:', validPost.uri)
               postsToCreate.push(validPost)
-              console.log(`Valid post collected for insertion: ${create.uri}`)
             } else {
-              console.error('Invalid post data:', create)
+              console.error('Post validation failed:', create)
             }
           } else {
-            console.log(
-              `Author ${create.author} is blocked or in blocked users list. Skipping post ${create.uri}.`,
-            )
+            console.log('Author is blocked, skipping post')
           }
         } else {
-          return
+          console.log('Author not found in Cincinnati users list')
         }
       }),
     )
 
+    console.log('\nBatch processing summary:', {
+      toDelete: postsToDelete.length,
+      toCreate: postsToCreate.length,
+    })
+
     if (postsToDelete.length > 0) {
-      console.log(`Deleting ${postsToDelete.length} posts.`)
       try {
         await this.db
           .deleteFrom('post')
           .where('uri', 'in', postsToDelete)
           .execute()
-        console.log('Successfully deleted posts.')
+        console.log('Successfully deleted posts')
       } catch (err) {
         console.error('Failed to delete posts:', err)
       }
-    } else {
     }
 
     if (postsToCreate.length > 0) {
-      console.log(`Inserting ${postsToCreate.length} new posts.`)
       try {
         await this.db
           .insertInto('post')
           .values(postsToCreate)
           .onConflict((oc) => oc.doNothing())
           .execute()
-        console.log('Successfully inserted new posts.')
+        console.log('Successfully created posts')
       } catch (err) {
-        console.error('Failed to insert new posts:', err)
+        console.error('Failed to create posts:', err)
       }
-    } else {
     }
 
-    // Add cursor update after handling posts
     await this.db
       .updateTable('sub_state')
       .set({ cursor: evt.seq })
