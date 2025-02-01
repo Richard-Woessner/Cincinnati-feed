@@ -476,6 +476,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
 
   async getCursor(): Promise<{ cursor?: number }> {
     console.log('Fetching cursor from sub_state table.')
+
     try {
       const res = await this.db
         .selectFrom('sub_state')
@@ -483,13 +484,28 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
         .where('service', '=', this.service)
         .executeTakeFirst()
 
-      // Ensure cursor is returned as number
-      const cursor = res?.cursor ? parseInt(String(res.cursor), 10) : undefined
-      console.log('Cursor fetched:', cursor)
-      return { cursor }
+      if (!res) {
+        console.warn('sub_state table is empty. Inserting default cursor.')
+
+        await this.db
+          .insertInto('sub_state')
+          .values({ service: this.service, cursor: 0 })
+          .onConflict((oc) => oc.doNothing())
+          .execute()
+
+        return { cursor: 0 } // Return default cursor
+      }
+
+      if (!Number.isInteger(res.cursor)) {
+        console.error('Invalid cursor found:', res.cursor)
+        return { cursor: 0 } // Return default
+      }
+
+      console.log('Cursor fetched:', res.cursor)
+      return { cursor: res.cursor }
     } catch (err) {
       console.error('Failed to get cursor:', err)
-      return {}
+      return { cursor: 0 } // Return default on failure
     }
   }
 }
