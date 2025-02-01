@@ -485,7 +485,17 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
       .where('service', '=', this.service)
       .executeTakeFirst()
 
-    // Return an object with the cursor property to match the base class type
-    return { cursor: res?.cursor }
+    if (!res) {
+      console.warn('sub_state table is empty. Using default cursor (0).')
+      return { cursor: 0 } // Start from beginning if table is empty
+    }
+
+    if (!Number.isInteger(res.cursor)) {
+      console.error('Invalid cursor found:', res.cursor)
+      return { cursor: 0 } // Avoid crashes if data is corrupt
+    }
+
+    console.log('Cursor loaded:', res.cursor)
+    return { cursor: res.cursor }
   }
 }
