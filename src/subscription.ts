@@ -27,6 +27,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
   constructor(db: Database, service: string) {
     super(db, service)
     console.log('Initializing FirehoseSubscription...')
+    this.getCursor()
     this.initializeAgent().then(async () => {
       console.log('Agent initialized.')
       await this.getBlockedUsers()
