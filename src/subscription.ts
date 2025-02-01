@@ -178,7 +178,6 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
 
       for (const profile of profiles) {
         if (!profile.description) {
-          console.log(`Profile ${profile.did} has no description. Skipping.`)
           continue
         }
 
@@ -358,33 +357,13 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
       return
     }
 
-    console.log('Received event:', JSON.stringify(evt, null, 2))
-    console.log('Sequence number:', evt.seq)
-
-    if (!Number.isInteger(evt.seq)) {
-      console.error('Invalid seq value:', evt.seq)
-      return // Skip invalid events
-    }
-
-    console.log('Processing event:', evt.seq)
     const ops = await getOpsByType(evt)
-    console.log('Posts to process:', {
-      creates: ops.posts.creates.length,
-      deletes: ops.posts.deletes.length,
-    })
 
     const postsToDelete = ops.posts.deletes.map((del) => del.uri)
     const postsToCreate: DatabaseSchema['post'][] = []
 
     await Promise.all(
       ops.posts.creates.map(async (create) => {
-        console.log(
-          `\n[${new Date().toISOString()}] Processing post (created ${
-            create.record.createdAt
-          }):`,
-          create.uri,
-        )
-
         if (!create.record.text) {
           console.log('Post has no text, skipping')
           return
@@ -416,12 +395,6 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
         }
 
         const actor = this.getAuthor(create.author)
-        console.log('Author check:', {
-          did: create.author,
-          foundInDB: !!actor,
-          isBlocked: actor?.blocked,
-          inBlockedList: this.blockedUsers.includes(create.author),
-        })
 
         if (!actor && isCincinnatiUser(create.record.text)) {
           console.log('New Cincinnati user found in post:', create.record.text)
@@ -453,10 +426,10 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
       }),
     )
 
-    console.log('\nBatch processing summary:', {
-      toDelete: postsToDelete.length,
-      toCreate: postsToCreate.length,
-    })
+    // console.log('\nBatch processing summary:', {
+    //   toDelete: postsToDelete.length,
+    //   toCreate: postsToCreate.length,
+    // })
 
     if (postsToDelete.length > 0) {
       try {

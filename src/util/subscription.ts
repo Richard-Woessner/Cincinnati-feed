@@ -22,6 +22,16 @@ export abstract class FirehoseSubscriptionBase {
       method: ids.ComAtprotoSyncSubscribeRepos,
       getParams: () => this.getCursor(),
       validate: (value: unknown) => {
+        // console.log('value', value)
+
+        // Type assertion and null check
+        if (value && typeof value === 'object' && 'seq' in value) {
+          // @ts-ignore - ignore type check for this line
+          ;(value as any).seq = parseInt(String(value.seq).replace(/\D/g, ''))
+        }
+
+        // console.log('value', value)
+
         try {
           return lexicons.assertValidXrpcMessage<RepoEvent>(
             ids.ComAtprotoSyncSubscribeRepos,
