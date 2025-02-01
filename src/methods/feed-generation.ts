@@ -10,15 +10,15 @@ export default function (server: Server, ctx: AppContext) {
     const feedUri = new AtUri(params.feed)
     const algo = algos[feedUri.rkey]
 
-    console.log('DEBUG feedUri:', feedUri.toString())
-    console.log(
-      'DEBUG feedUri.hostname vs ctx.cfg.publisherDid:',
-      feedUri.hostname,
-      ctx.cfg.publisherDid,
-    )
-    console.log('DEBUG feedUri.collection:', feedUri.collection)
-    console.log('DEBUG feedUri.rkey:', feedUri.rkey)
-    console.log('DEBUG algo from algos:', algos[feedUri.rkey])
+    // console.log('DEBUG feedUri:', feedUri.toString())
+    // console.log(
+    //   'DEBUG feedUri.hostname vs ctx.cfg.publisherDid:',
+    //   feedUri.hostname,
+    //   ctx.cfg.publisherDid,
+    // )
+    // console.log('DEBUG feedUri.collection:', feedUri.collection)
+    // console.log('DEBUG feedUri.rkey:', feedUri.rkey)
+    // console.log('DEBUG algo from algos:', algos[feedUri.rkey])
 
     if (
       feedUri.hostname !== ctx.cfg.publisherDid ||
