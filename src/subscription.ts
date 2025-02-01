@@ -491,32 +491,33 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
   }
 
   async getCursor(): Promise<{ cursor?: number }> {
-  const res = await this.db
-    .selectFrom('sub_state')
-    .selectAll()
-    .where('service', '=', this.service)
-    .executeTakeFirst();
-
-  if (!res) {
-    console.warn('⚠️ sub_state table is empty. Initializing cursor at 0.');
-    await this.db
-      .insertInto('sub_state')
-      .values({ service: this.service, cursor: 0 })
-      .onConflict((oc) => oc.doNothing())
-      .execute();
-    return { cursor: 0 };
-  }
-
-  if (!Number.isInteger(res.cursor)) {
-    console.error('🚨 Invalid cursor found:', res.cursor, '- Resetting to 0');
-    await this.db
-      .updateTable('sub_state')
-      .set({ cursor: 0 })
+    const res = await this.db
+      .selectFrom('sub_state')
+      .selectAll()
       .where('service', '=', this.service)
-      .execute();
-    return { cursor: 0 };
-  }
+      .executeTakeFirst()
 
-  console.log('✅ Loaded cursor:', res.cursor);
-  return { cursor: res.cursor };
+    if (!res) {
+      console.warn('⚠️ sub_state table is empty. Initializing cursor at 0.')
+      await this.db
+        .insertInto('sub_state')
+        .values({ service: this.service, cursor: 0 })
+        .onConflict((oc) => oc.doNothing())
+        .execute()
+      return { cursor: 0 }
+    }
+
+    if (!Number.isInteger(res.cursor)) {
+      console.error('🚨 Invalid cursor found:', res.cursor, '- Resetting to 0')
+      await this.db
+        .updateTable('sub_state')
+        .set({ cursor: 0 })
+        .where('service', '=', this.service)
+        .execute()
+      return { cursor: 0 }
+    }
+
+    console.log('✅ Loaded cursor:', res.cursor)
+    return { cursor: res.cursor }
+  }
 }
