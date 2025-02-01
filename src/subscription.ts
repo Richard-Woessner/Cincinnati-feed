@@ -400,6 +400,8 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
 
         const actor = this.getAuthor(create.author)
 
+        console.log(actor)
+
         // If post contains cincy, cincinnati, or cinci, check the author's bio, and if it contains cincy, cincinnati, or cinci, add to actor table
         if (!actor && isCincinnatiUser(create.record.text)) {
           console.log(
