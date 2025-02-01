@@ -11,7 +11,7 @@ import {
 import { FirehoseSubscriptionBase, getOpsByType } from './util/subscription'
 import * as fs from 'fs/promises'
 import { Database } from './db'
-import { DatabaseSchema } from './db/schema'
+import { Actor, DatabaseSchema } from './db/schema'
 import path from 'path'
 import { FollowerMap, ValidPostData } from './types'
 import { chunkArray, isCincinnatiUser, sanitizeString } from './utils/helpers'
@@ -22,6 +22,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
   private blockedUsers: string[] = []
   private followersMap: FollowerMap[] = []
   private followingMap: FollowerMap[] = []
+  private cincinnatiUsers: Actor[] = []
 
   constructor(db: Database, service: string) {
     super(db, service)
@@ -30,10 +31,19 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
       console.log('Agent initialized.')
       await this.getBlockedUsers()
 
-      await this.SearchForCincinnatiUsers()
+      // await this.SearchForCincinnatiUsers()
+      await this.getActorsDIDs()
       await this.cleanupNonCincinnatiPosts()
       console.log('Finished populating followers and following lists.')
     })
+  }
+
+  private async getActorsDIDs(): Promise<void> {
+    const existing = await this.db.selectFrom('actor').selectAll().execute()
+
+    this.cincinnatiUsers = existing.map((actor) => actor)
+
+    return
   }
 
   // /blocked-users.txt
@@ -63,6 +73,11 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
     } catch (err) {
       console.error('Failed to get blocked users:', err)
     }
+  }
+
+  private getAuthor(did: string) {
+    // If post author is in actor table, add to post table
+    return this.cincinnatiUsers.find((actor) => actor.did === did)
   }
 
   private async populateFollowers() {
@@ -383,20 +398,15 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
           }
         }
 
+        const actor = this.getAuthor(create.author)
+
         // If post contains cincy, cincinnati, or cinci, check the author's bio, and if it contains cincy, cincinnati, or cinci, add to actor table
-        if (isCincinnatiUser(create.record.text)) {
+        if (!actor && isCincinnatiUser(create.record.text)) {
           console.log(
             `Post ${create.uri} identified as Cincinnati user content.`,
           )
           await this.handleCincinnatiAuthor(create.author)
         }
-
-        // If post author is in actor table, add to post table
-        const actor = await this.db
-          .selectFrom('actor')
-          .selectAll()
-          .where('did', '=', create.author)
-          .executeTakeFirst()
 
         if (actor != undefined) {
           console.log(`Author ${create.author} found in actor table.`)
