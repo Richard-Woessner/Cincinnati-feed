@@ -463,57 +463,22 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
     } else {
     }
 
-    // Ensure cursor is an integer before updating
-    const cursorInt = parseInt(String(evt.seq), 10)
-    if (isNaN(cursorInt)) {
-      console.error('Invalid cursor value:', evt.seq)
-      return
-    }
-
     // Add cursor update after handling posts
-    try {
-      await this.db
-        .updateTable('sub_state')
-        .set({ cursor: cursorInt })
-        .where('service', '=', this.service)
-        .execute()
-    } catch (err) {
-      console.error('Failed to update cursor:', err)
-    }
+    await this.db
+      .updateTable('sub_state')
+      .set({ cursor: evt.seq })
+      .where('service', '=', this.service)
+      .execute()
   }
 
   async getCursor(): Promise<{ cursor?: number }> {
-    console.log('Fetching cursor from sub_state table.')
+    const res = await this.db
+      .selectFrom('sub_state')
+      .selectAll()
+      .where('service', '=', this.service)
+      .executeTakeFirst()
 
-    try {
-      const res = await this.db
-        .selectFrom('sub_state')
-        .selectAll()
-        .where('service', '=', this.service)
-        .executeTakeFirst()
-
-      if (!res) {
-        console.warn('sub_state table is empty. Inserting default cursor.')
-
-        await this.db
-          .insertInto('sub_state')
-          .values({ service: this.service, cursor: 0 })
-          .onConflict((oc) => oc.doNothing())
-          .execute()
-
-        return { cursor: 0 } // Return default cursor
-      }
-
-      if (!Number.isInteger(res.cursor)) {
-        console.error('Invalid cursor found:', res.cursor)
-        return { cursor: 0 } // Return default
-      }
-
-      console.log('Cursor fetched:', res.cursor)
-      return { cursor: res.cursor }
-    } catch (err) {
-      console.error('Failed to get cursor:', err)
-      return { cursor: 0 } // Return default on failure
-    }
+    // Return an object with the cursor property to match the base class type
+    return { cursor: res?.cursor }
   }
 }
