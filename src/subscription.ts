@@ -357,6 +357,14 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
       return
     }
 
+    console.log('Received event:', JSON.stringify(evt, null, 2))
+    console.log('Sequence number:', evt.seq)
+
+    if (!Number.isInteger(evt.seq)) {
+      console.error('Invalid seq value:', evt.seq)
+      return // Skip invalid events
+    }
+
     console.log('Processing event:', evt.seq)
     const ops = await getOpsByType(evt)
     console.log('Posts to process:', {
@@ -490,31 +498,25 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
 
     if (!res) {
       console.warn('sub_state table is empty. Initializing cursor at 0.')
-
-      // Insert a new record with cursor = 0
       await this.db
         .insertInto('sub_state')
         .values({ service: this.service, cursor: 0 })
-        .onConflict((oc) => oc.doNothing()) // Prevent duplicate entry errors
+        .onConflict((oc) => oc.doNothing())
         .execute()
-
-      return { cursor: 0 } // Start from 0
+      return { cursor: 0 }
     }
 
     if (!Number.isInteger(res.cursor)) {
       console.error('Invalid cursor found:', res.cursor, '- Resetting to 0')
-
-      // Reset invalid cursor to 0
       await this.db
         .updateTable('sub_state')
         .set({ cursor: 0 })
         .where('service', '=', this.service)
         .execute()
-
       return { cursor: 0 }
     }
 
-    console.log('Cursor loaded:', res.cursor)
+    console.log('Loaded cursor:', res.cursor)
     return { cursor: res.cursor }
   }
 }
