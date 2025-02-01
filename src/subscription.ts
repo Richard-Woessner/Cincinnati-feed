@@ -489,13 +489,29 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
       .executeTakeFirst()
 
     if (!res) {
-      console.warn('sub_state table is empty. Using default cursor (0).')
-      return { cursor: 0 } // Start from beginning if table is empty
+      console.warn('sub_state table is empty. Initializing cursor at 0.')
+
+      // Insert a new record with cursor = 0
+      await this.db
+        .insertInto('sub_state')
+        .values({ service: this.service, cursor: 0 })
+        .onConflict((oc) => oc.doNothing()) // Prevent duplicate entry errors
+        .execute()
+
+      return { cursor: 0 } // Start from 0
     }
 
     if (!Number.isInteger(res.cursor)) {
-      console.error('Invalid cursor found:', res.cursor)
-      return { cursor: 0 } // Avoid crashes if data is corrupt
+      console.error('Invalid cursor found:', res.cursor, '- Resetting to 0')
+
+      // Reset invalid cursor to 0
+      await this.db
+        .updateTable('sub_state')
+        .set({ cursor: 0 })
+        .where('service', '=', this.service)
+        .execute()
+
+      return { cursor: 0 }
     }
 
     console.log('Cursor loaded:', res.cursor)
