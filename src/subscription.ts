@@ -11,33 +11,17 @@ import {
 import { FirehoseSubscriptionBase, getOpsByType } from './util/subscription'
 import * as fs from 'fs/promises'
 import { Database } from './db'
-import { Actor, DatabaseSchema } from './db/schema'
+import { DatabaseSchema } from './db/schema'
 import path from 'path'
-import { ProfileView } from '@atproto/api/dist/client/types/app/bsky/actor/defs'
-import { SelfLabels } from './lexicon/types/com/atproto/label/defs'
-
-interface FollowerMap {
-  userDid: string
-  followers: AppBskyActorDefs.ProfileView[]
-}
-
-// Create interface for post data validation
-interface ValidPostData {
-  uri: string
-  cid: string
-  indexedAt: string
-  author: string
-  text: string
-}
+import { FollowerMap, ValidPostData } from './types'
+import { chunkArray, isCincinnatiUser, sanitizeString } from './utils/helpers'
 
 export class FirehoseSubscription extends FirehoseSubscriptionBase {
   private agent = new BskyAgent({ service: 'https://bsky.social' })
   private fileHandle: fs.FileHandle | null = null
-
-  private blockedUsers: string[] = [] // Stores blocked users
-
-  private followersMap: FollowerMap[] = [] // Stores followers
-  private followingMap: FollowerMap[] = [] // Stores following
+  private blockedUsers: string[] = []
+  private followersMap: FollowerMap[] = []
+  private followingMap: FollowerMap[] = []
 
   constructor(db: Database, service: string) {
     super(db, service)
@@ -145,31 +129,20 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
     }
   }
 
-  private chunkArray<T>(array: T[], size: number): T[][] {
-    return Array.from({ length: Math.ceil(array.length / size) }, (_, i) =>
-      array.slice(i * size, i * size + size),
-    )
-  }
-
   private async fetchProfiles(dids: string[]) {
     console.log(`Fetching profiles for ${dids.length} DIDs.`)
-    const chunks = this.chunkArray(dids, 25)
+    const chunks = chunkArray(dids, 25)
     const profiles: AppBskyActorDefs.ProfileView[] = []
 
     for (const chunk of chunks) {
-      console.log(`Fetching profiles chunk with ${chunk.length} DIDs.`)
       try {
         const response = await this.agent.getProfiles({ actors: chunk })
         profiles.push(...response.data.profiles)
-        console.log(
-          `Fetched ${response.data.profiles.length} profiles in this chunk.`,
-        )
       } catch (err) {
         console.error('Failed to fetch profiles chunk:', err)
       }
     }
 
-    console.log(`Total profiles fetched: ${profiles.length}`)
     return profiles
   }
 
@@ -201,17 +174,17 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
           continue
         }
 
-        if (this.isCincinnatiUser(profile.description)) {
+        if (isCincinnatiUser(profile.description)) {
           console.log('Inserting actor:', {
             did: profile.did,
-            description: this.sanitizeString(profile.description),
+            description: sanitizeString(profile.description),
             blocked: 0,
           })
           await this.db
             .insertInto('actor')
             .values({
               did: profile.did,
-              description: this.sanitizeString(profile.description),
+              description: sanitizeString(profile.description),
               blocked: 0,
             })
             .onConflict((oc) => oc.doNothing())
@@ -239,7 +212,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
             .insertInto('actor')
             .values({
               did: did,
-              description: this.sanitizeString(profile.data.description || ''),
+              description: sanitizeString(profile.data.description || ''),
               blocked: 0,
             })
             .onConflict((oc) => oc.doNothing())
@@ -253,26 +226,6 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
     } catch (err) {
       console.error('Failed to seed actors:', err)
     }
-  }
-
-  private isCincinnatiUser(bio: string | null): boolean {
-    if (!bio || bio == '') return false
-
-    // Use word boundaries \b to match whole words only
-    const cincinnatiPattern = /\b(cincy|cincinnati|cinci)\b/i
-
-    bio = bio.toLowerCase()
-
-    let isCincinnati =
-      bio.includes('cincy') ||
-      bio.includes('cinci') ||
-      bio.includes('cincinnati')
-
-    if (isCincinnati) {
-      console.log('Cincinnati User:', bio)
-    }
-
-    return isCincinnati
   }
 
   private async cleanupNonCincinnatiPosts() {
@@ -293,8 +246,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
       )
       const nonCincyDids = actors
         .filter(
-          (actor) =>
-            !actor.description || !this.isCincinnatiUser(actor.description),
+          (actor) => !actor.description || !isCincinnatiUser(actor.description),
         )
         .map((actor) => actor.did)
 
@@ -339,41 +291,22 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
     }
   }
 
-  // Add validation function
   private validatePostData(post: any): ValidPostData | null {
-    console.log('Validating post data:', post)
     try {
-      const validatedPost: ValidPostData = {
+      return {
         uri: String(post.uri),
         cid: String(post.cid),
         indexedAt: String(post.indexedAt),
         author: String(post.author),
         text: String(post.text),
       }
-      console.log('Post data is valid:', validatedPost)
-      return validatedPost
     } catch (err) {
       console.error('Invalid post data:', err)
       return null
     }
   }
 
-  private isString(value: unknown): value is string {
-    return typeof value === 'string'
-  }
-
-  private sanitizeString(value: unknown): string {
-    if (typeof value !== 'string') return ''
-    // remove line breaks
-    let safe = value.replace(/\r?\n|\n/g, ' ')
-    // normalize & remove problematic codepoints
-    safe = safe.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    console.log('Sanitized string:', safe)
-    return safe
-  }
-
   private async handleCincinnatiAuthor(did: string) {
-    console.log(`Handling Cincinnati author: ${did}`)
     try {
       const existing = await this.db
         .selectFrom('actor')
@@ -381,49 +314,24 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
         .where('did', '=', did)
         .executeTakeFirst()
 
-      if (existing) {
-        console.log(`Actor ${did} already in table, skipping insert.`)
-        return
-      }
+      if (existing) return
 
       const profile = await this.agent.getProfile({ actor: did })
-      console.log(`Fetched profile for DID: ${did}`)
-      const bioRaw = profile.data.description
-      const bio = this.sanitizeString(bioRaw)
+      const bio = sanitizeString(profile.data.description)
 
-      if (!this.isCincinnatiUser(bio)) {
-        console.log(`Bio for ${did} does not contain Cincinnati. Skipping.`)
-        return
-      }
-
-      // Convert boolean to integer
-      const blockedInt = 0 // false
-
-      // Log values and types
-      console.log('Inserting actor:', {
-        did: this.sanitizeString(did),
-        description: bio,
-        blocked: blockedInt,
-      })
-      console.log('Types:', {
-        did: typeof this.sanitizeString(did),
-        description: typeof bio,
-        blocked: typeof blockedInt,
-      })
+      if (!isCincinnatiUser(bio)) return
 
       await this.db
         .insertInto('actor')
         .values({
-          did: this.sanitizeString(did),
+          did: sanitizeString(did),
           description: bio,
-          blocked: blockedInt, // Use integer instead of boolean
+          blocked: 0,
         })
         .onConflict((oc) => oc.doNothing())
         .execute()
 
-      console.log(`Successfully inserted actor ${did}.`)
       await fs.appendFile('./cincinnati-users.txt', `${did}\n`)
-      console.log(`Appended ${did} to cincinnati-users.txt.`)
     } catch (err) {
       console.error('Error processing author:', err)
     }
@@ -476,7 +384,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
         }
 
         // If post contains cincy, cincinnati, or cinci, check the author's bio, and if it contains cincy, cincinnati, or cinci, add to actor table
-        if (this.isCincinnatiUser(create.record.text)) {
+        if (isCincinnatiUser(create.record.text)) {
           console.log(
             `Post ${create.uri} identified as Cincinnati user content.`,
           )
