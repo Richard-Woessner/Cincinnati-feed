@@ -15,6 +15,10 @@ import { Actor, DatabaseSchema } from './db/schema'
 import path from 'path'
 import { FollowerMap, ValidPostData } from './types'
 import { chunkArray, isCincinnatiUser, sanitizeString } from './utils/helpers'
+import { handleCincinnatiAuthor } from './features/users'
+import { validatePostData } from './features/validatePostData'
+import { cleanupNonCincinnatiPosts } from './features/cleanNonCincinnatiPosts'
+import { isNSFW } from './features/isNSFW'
 
 export class FirehoseSubscription extends FirehoseSubscriptionBase {
   private agent = new BskyAgent({ service: 'https://bsky.social' })
@@ -32,12 +36,20 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
       console.log('Agent initialized.')
       await this.getBlockedUsers()
 
-      Array(process.env.SEARCH_LOOP_ATTEMPTS).forEach(async () => {
-        await this.SearchForCincinnatiUsers()
-      })
+      console.log(process.env.SEARCH_LOOP_ATTEMPTS)
+
+      const searchLoopAttempts = parseInt(
+        process.env.SEARCH_LOOP_ATTEMPTS ?? '0',
+      )
+
+      if (searchLoopAttempts !== 0) {
+        Array(searchLoopAttempts).forEach(async () => {
+          await this.SearchForCincinnatiUsers()
+        })
+      }
 
       await this.getActorsDIDs()
-      await this.cleanupNonCincinnatiPosts()
+      await cleanupNonCincinnatiPosts(db)
       console.log('Finished populating followers and following lists.')
     })
   }
@@ -246,56 +258,6 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
     }
   }
 
-  private async cleanupNonCincinnatiPosts() {
-    console.log('Cleaning up non-Cincinnati and blocked user posts...')
-
-    try {
-      // Log the current state before deletion
-      console.log('Preparing to delete posts...')
-
-      // Remove actors whose bio does not contain 'cincy', 'cincinnati', or 'cinci'
-      const actors = await this.db
-        .selectFrom('actor')
-        .select(['did', 'description'])
-        .execute()
-
-      console.log(
-        `Checking ${actors.length} actors for Cincinnati relevance...`,
-      )
-      const nonCincyDids = actors
-        .filter(
-          (actor) => !actor.description || !isCincinnatiUser(actor.description),
-        )
-        .map((actor) => actor.did)
-
-      console.log(
-        `Found ${nonCincyDids.length} non-Cincinnati actors to remove.`,
-      )
-
-      if (nonCincyDids.length > 0) {
-        await this.db
-          .deleteFrom('actor')
-          .where('did', 'in', nonCincyDids)
-          .execute()
-
-        console.log(`Removed ${nonCincyDids.length} non-Cincinnati actors.`)
-      }
-      await this.db
-        .deleteFrom('post')
-        .where('author', 'not in', this.db.selectFrom('actor').select('did'))
-        .where(
-          'author',
-          'in',
-          this.db.selectFrom('actor').select('did').where('blocked', '=', 1),
-        )
-        .execute()
-
-      console.log('Cleaned up non-Cincinnati and blocked user posts.')
-    } catch (err) {
-      console.error('Failed to cleanup posts:', err)
-    }
-  }
-
   async initializeAgent() {
     console.log('Initializing agent login...')
     try {
@@ -306,48 +268,6 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
       console.log('Agent successfully logged in.')
     } catch (err) {
       console.error('Failed to initialize agent:', err)
-    }
-  }
-
-  private validatePostData(post: any): ValidPostData | null {
-    try {
-      return {
-        uri: String(post.uri),
-        cid: String(post.cid),
-        indexedAt: String(post.indexedAt),
-        author: String(post.author),
-        text: String(post.text),
-      }
-    } catch (err) {
-      console.error('Invalid post data:', err)
-      return null
-    }
-  }
-
-  private async handleCincinnatiAuthor(did: string) {
-    try {
-      const existing = this.cincinnatiUsers.find((actor) => actor.did === did)
-
-      if (existing) return
-
-      const profile = await this.agent.getProfile({ actor: did })
-      const bio = sanitizeString(profile.data.description)
-
-      if (!isCincinnatiUser(bio)) return
-
-      await this.db
-        .insertInto('actor')
-        .values({
-          did: did,
-          description: sanitizeString(bio),
-          blocked: 0,
-        })
-        .onConflict((oc) => oc.doNothing())
-        .execute()
-
-      fs.appendFile('./cincinnati-users.txt', `${did}\n`)
-    } catch (err) {
-      console.error('Error processing author:', err)
     }
   }
 
@@ -364,46 +284,21 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
 
     await Promise.all(
       ops.posts.creates.map(async (create) => {
-        if (!create.record.text) {
-          console.log('Post has no text, skipping')
-          return
+        const actor = this.getAuthor(create.author)
+
+        if (!actor) {
+          console.log('Author not found in Cincinnati users list')
+          return Promise.resolve()
         }
 
         const postLabels = create.record.labels
-        if (postLabels) {
-          console.log('Post labels found:', postLabels)
-          const labels = postLabels.values as
-            | ComAtprotoLabelDefs.SelfLabel[]
-            | undefined
-
-          if (
-            postLabels.$type === 'com.atproto.label.defs#selfLabels' &&
-            labels?.some((label) =>
-              [
-                'porn',
-                'nsfw',
-                'sexual',
-                'nsfw:explicit',
-                'adult',
-                'graphic-media',
-              ].includes(label.val),
-            )
-          ) {
-            console.log('Post contains blocked labels, skipping')
-            return
-          }
-        }
-
-        const actor = this.getAuthor(create.author)
-
-        if (!actor && isCincinnatiUser(create.record.text)) {
-          console.log('New Cincinnati user found in post:', create.record.text)
-          await this.handleCincinnatiAuthor(create.author)
+        if (isNSFW(postLabels)) {
+          return Promise.resolve()
         }
 
         if (actor) {
           if (!actor.blocked && !this.blockedUsers.includes(actor.did)) {
-            const validPost = this.validatePostData({
+            const validPost = await validatePostData({
               uri: create.uri,
               cid: create.cid,
               indexedAt: new Date().toISOString(),
@@ -433,10 +328,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
 
     if (postsToDelete.length > 0) {
       try {
-        await this.db
-          .deleteFrom('post')
-          .where('uri', 'in', postsToDelete)
-          .execute()
+        this.db.deleteFrom('post').where('uri', 'in', postsToDelete).execute()
         console.log('Successfully deleted posts')
       } catch (err) {
         console.error('Failed to delete posts:', err)
@@ -445,7 +337,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
 
     if (postsToCreate.length > 0) {
       try {
-        await this.db
+        this.db
           .insertInto('post')
           .values(postsToCreate)
           .onConflict((oc) => oc.doNothing())
@@ -456,7 +348,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
       }
     }
 
-    await this.db
+    this.db
       .updateTable('sub_state')
       .set({ cursor: parseInt(evt.seq.toString(), 10) })
       .where('service', '=', this.service)
