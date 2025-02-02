@@ -43,9 +43,11 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
       )
 
       if (searchLoopAttempts !== 0) {
-        Array(searchLoopAttempts).forEach(async () => {
-          await this.SearchForCincinnatiUsers()
-        })
+        await Promise.all(
+          Array.from({ length: searchLoopAttempts }).map(() =>
+            this.SearchForCincinnatiUsers(),
+          ),
+        )
       }
 
       await this.getActorsDIDs()
@@ -75,15 +77,16 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
       console.log(`Blocked users found: ${actors.length}`)
       this.blockedUsers.push(...actors)
 
-      // Block users in the actor table
-      for (const actor of actors) {
-        console.log(`Blocking actor: ${actor}`)
-        await this.db
-          .updateTable('actor')
-          .set({ blocked: 1 })
-          .where('did', '=', actor)
-          .execute()
-      }
+      await Promise.all(
+        actors.map(async (actor) => {
+          console.log(`Blocking actor: ${actor}`)
+          await this.db
+            .updateTable('actor')
+            .set({ blocked: 1 })
+            .where('did', '=', actor)
+            .execute()
+        }),
+      )
 
       console.log('Blocked users successfully loaded.')
     } catch (err) {
@@ -102,20 +105,21 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
       const actors = await this.db.selectFrom('actor').select(['did']).execute()
       console.log(`Fetched ${actors.length} actors from the database.`)
 
-      for (const { did } of actors) {
-        console.log(`Fetching followers for DID: ${did}`)
-        const followers = await this.fetchFollowers(did)
-        console.log(
-          `Fetched ${followers.followers.length} followers for DID: ${did}`,
-        )
-        const following = await this.fetchFollowing(did)
-        console.log(
-          `Fetched ${following.followers.length} following for DID: ${did}`,
-        )
+      await Promise.all(
+        actors.map(async ({ did }) => {
+          console.log(`Fetching followers and following for DID: ${did}`)
+          const [followers, following] = await Promise.all([
+            this.fetchFollowers(did),
+            this.fetchFollowing(did),
+          ])
+          console.log(
+            `Fetched ${followers.followers.length} followers and ${following.followers.length} following for DID: ${did}`,
+          )
 
-        this.followersMap.push(followers)
-        this.followingMap.push(following)
-      }
+          this.followersMap.push(followers)
+          this.followingMap.push(following)
+        }),
+      )
 
       console.log('Successfully populated followers and following lists.')
     } catch (err) {
@@ -234,24 +238,26 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
       const actors = fileContent.trim().split('\n')
       console.log(`Found ${actors.length} actors to seed.`)
 
-      for (const did of actors) {
-        console.log(`Seeding actor DID: ${did}`)
-        try {
-          const profile = await this.agent.getProfile({ actor: did })
-          await this.db
-            .insertInto('actor')
-            .values({
-              did: did,
-              description: sanitizeString(profile.data.description || ''),
-              blocked: 0,
-            })
-            .onConflict((oc) => oc.doNothing())
-            .execute()
-          console.log(`Successfully seeded actor ${did}.`)
-        } catch (err) {
-          console.error(`Failed to seed actor ${did}:`, err)
-        }
-      }
+      await Promise.all(
+        actors.map(async (did) => {
+          console.log(`Seeding actor DID: ${did}`)
+          try {
+            const profile = await this.agent.getProfile({ actor: did })
+            await this.db
+              .insertInto('actor')
+              .values({
+                did: did,
+                description: sanitizeString(profile.data.description || ''),
+                blocked: 0,
+              })
+              .onConflict((oc) => oc.doNothing())
+              .execute()
+            console.log(`Successfully seeded actor ${did}.`)
+          } catch (err) {
+            console.error(`Failed to seed actor ${did}:`, err)
+          }
+        }),
+      )
       console.log('Successfully seeded actors from file.')
     } catch (err) {
       console.error('Failed to seed actors:', err)
