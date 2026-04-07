@@ -2,12 +2,7 @@ import {
   OutputSchema as RepoEvent,
   isCommit,
 } from './lexicon/types/com/atproto/sync/subscribeRepos'
-import {
-  AppBskyActorDefs,
-  AppBskyActorGetProfiles,
-  BskyAgent,
-  ComAtprotoLabelDefs,
-} from '@atproto/api'
+import { AppBskyActorDefs, BskyAgent, ComAtprotoLabelDefs } from '@atproto/api'
 import { FirehoseSubscriptionBase, getOpsByType } from './util/subscription'
 import * as fs from 'fs/promises'
 import { Database } from './db'
@@ -56,9 +51,8 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
   private fileHandle: fs.FileHandle | null = null
   // DIDs from blocked-users.txt — these authors' posts are always skipped
   private blockedUsers: string[] = []
-  // Social graph caches built during SearchForCincinnatiUsers
+  // Social graph cache built during SearchForCincinnatiUsers
   private followersMap: FollowerMap[] = []
-  private followingMap: FollowerMap[] = []
   // In-memory copy of the actor table used for O(n) author lookups per event
   private cincinnatiUsers: Actor[] = []
 
@@ -133,7 +127,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
       const filePath = path.join(process.cwd(), '/blocked-users.txt')
       console.log(`Reading blocked users from: ${filePath}`)
       const fileContent = await fs.readFile(filePath, 'utf-8')
-      const actors = fileContent.trim().split('\n')
+      const actors = fileContent.trim().split('\n').filter(Boolean)
 
       console.log(`Blocked users found: ${actors.length}`)
       this.blockedUsers.push(...actors)
@@ -162,8 +156,8 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
     return this.cincinnatiUsers.find((actor) => actor.did === did)
   }
 
-  // Fetches up to 100 followers and 100 following for every known Cincinnati
-  // actor and stores them in followersMap / followingMap. These maps are then
+  // Fetches up to 100 followers for every known Cincinnati
+  // actor and stores them in followersMap. These are then
   // used by SearchForCincinnatiUsers to discover new Cincinnati users via
   // social-graph expansion ("people who follow Cincinnati users may also be
   // Cincinnati users").
@@ -175,17 +169,13 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
 
       await Promise.all(
         actors.map(async ({ did }) => {
-          console.log(`Fetching followers and following for DID: ${did}`)
-          const [followers, following] = await Promise.all([
-            this.fetchFollowers(did),
-            this.fetchFollowing(did),
-          ])
+          console.log(`Fetching followers for DID: ${did}`)
+          const followers = await this.fetchFollowers(did)
           console.log(
-            `Fetched ${followers.followers.length} followers and ${following.followers.length} following for DID: ${did}`,
+            `Fetched ${followers.followers.length} followers for DID: ${did}`,
           )
 
           this.followersMap.push(followers)
-          this.followingMap.push(following)
         }),
       )
 
@@ -210,24 +200,6 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
       }
     } catch (err) {
       console.error(`Failed to fetch followers for ${did}:`, err)
-      return { userDid: did, followers: [] }
-    }
-  }
-
-  private async fetchFollowing(did: string): Promise<FollowerMap> {
-    try {
-      const { data } = await this.agent.api.app.bsky.graph.getFollows({
-        actor: did,
-        limit: 100, // Adjust as needed
-      })
-
-      console.log(`Fetched ${data.follows.length} following for DID: ${did}`)
-      return {
-        userDid: did,
-        followers: data.follows,
-      }
-    } catch (err) {
-      console.error(`Failed to fetch following for ${did}:`, err)
       return { userDid: did, followers: [] }
     }
   }
@@ -385,9 +357,6 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
 
         // Fast reject: skip posts with no connection to Cincinnati at all
         if (!actor && !hasCincinnatiKeywords(postText)) {
-          // console.log(
-          //   `[${create.uri}] No Cincinnati signal — skipping (not a known user, no keyword match)`,
-          // )
           return Promise.resolve()
         }
 
@@ -432,6 +401,15 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
           mlScore,
         })
 
+        if (!actor && mlScore >= CINCINNATI_THRESHOLD) {
+          await handleCincinnatiAuthor(
+            this.db,
+            this.agent,
+            this.cincinnatiUsers,
+            create.author,
+          )
+        }
+
         if (validPost) {
           console.log(
             `Valid post ready for insertion: ${validPost.uri} (mlScore=${mlScore.toFixed(3)})`,
@@ -442,11 +420,6 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
         }
       }),
     )
-
-    // console.log('\nBatch processing summary:', {
-    //   toDelete: postsToDelete.length,
-    //   toCreate: postsToCreate.length,
-    // })
 
     // Mirror deletions — if a user deletes a post on Bluesky, remove it from
     // the feed database so it stops appearing in the feed skeleton.

@@ -2,9 +2,6 @@
 // while this project outputs CommonJS. Node.js CJS modules support
 // dynamic import() natively.
 
-const CINCINNATI_THRESHOLD = parseFloat(
-  process.env.CINCINNATI_THRESHOLD ?? '0.2',
-)
 const NSFW_THRESHOLD = parseFloat(process.env.NSFW_THRESHOLD ?? '0.8')
 
 // A single zero-shot pipeline handles both Cincinnati relevance and NSFW

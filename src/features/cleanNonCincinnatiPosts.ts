@@ -28,9 +28,15 @@ export async function cleanupNonCincinnatiPosts(db: Database): Promise<void> {
 
       console.log(`Removed ${nonCincyDids.length} non-Cincinnati actors.`)
     }
+    // Delete posts whose author is not in the actor table
     await db
       .deleteFrom('post')
       .where('author', 'not in', db.selectFrom('actor').select('did'))
+      .execute()
+
+    // Delete posts whose author is blocked
+    await db
+      .deleteFrom('post')
       .where(
         'author',
         'in',

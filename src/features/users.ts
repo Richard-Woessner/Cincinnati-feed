@@ -30,6 +30,8 @@ export async function handleCincinnatiAuthor(
       .onConflict((oc) => oc.doNothing())
       .execute()
 
+    cincinnatiUsers.push({ did, description: sanitizeString(bio), blocked: 0 })
+
     await fs.appendFile('./cincinnati-users.txt', `${did}\n`)
   } catch (err) {
     console.error('Error processing author:', err)
