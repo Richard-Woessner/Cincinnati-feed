@@ -55,3 +55,12 @@ migrations['003'] = {
     await db.schema.alterTable('actor').dropColumn('integer').execute()
   },
 }
+
+migrations['004'] = {
+  async up(db: Kysely<unknown>) {
+    await db.schema.alterTable('post').addColumn('mlScore', 'real').execute()
+  },
+  async down(db: Kysely<unknown>) {
+    await db.schema.alterTable('post').dropColumn('mlScore').execute()
+  },
+}

@@ -5,6 +5,7 @@ export interface DatabaseSchema {
     indexedAt: string
     author: string
     text: string // Add text column
+    mlScore: number | null
   }
   actor: {
     did: string

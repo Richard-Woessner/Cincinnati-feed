@@ -11,4 +11,5 @@ export interface ValidPostData {
   indexedAt: string
   author: string
   text: string
+  mlScore: number | null
 }
