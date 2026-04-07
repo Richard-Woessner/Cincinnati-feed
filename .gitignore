@@ -137,3 +137,5 @@ dist
 blocked-users.txt
 
 /data
+# Go build output
+go/go
