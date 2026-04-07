@@ -22,3 +22,49 @@ export function isCincinnatiUser(bio: string | null): boolean {
     bio.includes('cincinnati') || bio.includes('cincy') || bio.includes('cinci')
   )
 }
+
+const CINCINNATI_KEYWORDS = [
+  'cincinnati',
+  'cincy',
+  'cinci',
+  'bengals',
+  'fc cincinnati',
+  'cincinnati reds',
+  'xavier musketeers',
+  'uc bearcats',
+  'bearcats',
+  '513',
+  'clifton',
+  'hyde park',
+  'over-the-rhine',
+  'otr ohio',
+  'covington ky',
+  'newport ky',
+  'northern kentucky',
+  'nky',
+  'paul brown stadium',
+  'paycor stadium',
+  'great american ball park',
+  'carew tower',
+  'rookwood',
+  'skyline chili',
+  'goetta',
+  'mt. adams',
+  'mt adams',
+  'anderson township',
+  'blue ash',
+  'mason ohio',
+  'westwood ohio',
+  'price hill',
+  'norwood ohio',
+  'finneytown',
+  'kenwood ohio',
+  'mariemont',
+  'montgomery ohio',
+]
+
+export function hasCincinnatiKeywords(text: string): boolean {
+  if (!text) return false
+  const lower = text.toLowerCase()
+  return CINCINNATI_KEYWORDS.some((kw) => lower.includes(kw))
+}

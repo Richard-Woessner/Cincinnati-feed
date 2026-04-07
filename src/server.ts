@@ -76,6 +76,11 @@ export class FeedGenerator {
         .execute()
     }
 
+    // Wait for the full startup sequence (agent login, actor loading, ML model
+    // warm-up) to complete before opening the HTTP port. This ensures the feed
+    // skeleton never serves requests with uninitialised classifiers.
+    console.log('Waiting for ML classifiers to initialise before starting HTTP server...')
+    await this.firehose.ready
     this.firehose.run(this.cfg.subscriptionReconnectDelay)
     this.server = this.app.listen(this.cfg.port, this.cfg.listenhost)
     await events.once(this.server, 'listening')

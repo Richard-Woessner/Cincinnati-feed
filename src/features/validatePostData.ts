@@ -10,6 +10,7 @@ export async function validatePostData(
       indexedAt: String(post.indexedAt),
       author: String(post.author),
       text: String(post.text),
+      mlScore: typeof post.mlScore === 'number' ? post.mlScore : null,
     }
   } catch (err) {
     console.error('Invalid post data:', err)
