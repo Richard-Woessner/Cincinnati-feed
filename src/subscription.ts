@@ -371,10 +371,14 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
           return Promise.resolve()
         }
 
+        // Combine post text with the author's bio so the classifier has more
+        // signal — reduces false positives for short posts that lack keywords.
+        const mlText = [postText, actor?.description].filter(Boolean).join(' ')
+
         // Run ML NSFW + Cincinnati relevance in parallel
         const [mlNSFW, mlScore] = await Promise.all([
-          classifyNSFW(postText),
-          classifyCincinnatiRelevance(postText),
+          classifyNSFW(mlText),
+          classifyCincinnatiRelevance(mlText),
         ])
 
         if (mlNSFW) {
