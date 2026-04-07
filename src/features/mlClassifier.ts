@@ -9,8 +9,23 @@ const NSFW_THRESHOLD = parseFloat(process.env.NSFW_THRESHOLD ?? '0.8')
 // cannot be used with @huggingface/transformers. Reusing the zero-shot model
 // avoids a second download and works reliably.
 let zeroShotPipeline:
-  | ((text: string, labels: string[]) => Promise<any>)
+  | ((
+      text: string,
+      labels: string[],
+      options?: Record<string, unknown>,
+    ) => Promise<any>)
   | null = null
+
+const CINCINNATI_LABELS = [
+  // Positive signals — be specific
+  'this post mentions Cincinnati, Ohio',
+  'this post is about a Cincinnati neighborhood like Over-the-Rhine, Hyde Park, Clifton, or Northside',
+  'this post mentions Cincinnati sports like the Bengals, Reds, FC Cincinnati, or UC Bearcats',
+  'this post mentions Cincinnati landmarks like Skyline Chili, the Banks, Eden Park, or Music Hall',
+  'this post discusses local Cincinnati news, events, or politics',
+  // Negative signal
+  'this post has nothing to do with Cincinnati Ohio',
+]
 
 export async function initClassifiers(): Promise<void> {
   console.log('Initializing ML classifiers (first run will download models)...')
@@ -35,27 +50,37 @@ export async function initClassifiers(): Promise<void> {
 export async function classifyCincinnatiRelevance(
   text: string,
 ): Promise<number> {
-  if (!zeroShotPipeline) {
-    console.log(
-      'Cincinnati classifier not ready yet — skipping ML score (returning 0)',
-    )
-    return 0
-  }
+  if (!zeroShotPipeline) return 0
+
   try {
-    const result = await zeroShotPipeline(text, [
-      'about Cincinnati Ohio',
-      'not about Cincinnati Ohio',
-    ])
-    const cincyIdx = (result.labels as string[]).indexOf(
-      'about Cincinnati Ohio',
-    )
-    const score = (result.scores as number[])[cincyIdx]
+    const result = await zeroShotPipeline(text, CINCINNATI_LABELS, {
+      multi_label: true,
+      hypothesis_template: 'This text is {}.',
+    })
+
+    const labels = result.labels as string[]
+    const scores = result.scores as number[]
+
+    // Sum all positive label scores, subtract the negative one
+    const negativeLabel = 'this post has nothing to do with Cincinnati Ohio'
+    let positiveScore = 0
+    let negativeScore = 0
+
+    labels.forEach((label, i) => {
+      if (label === negativeLabel) {
+        negativeScore = scores[i]
+      } else {
+        positiveScore = Math.max(positiveScore, scores[i])
+      }
+    })
+
+    const finalScore = Math.max(0, positiveScore - negativeScore * 0.5)
 
     console.log(
-      `Cincinnati relevance score: ${score.toFixed(3)} for text: ${text}`,
+      `Cincinnati relevance: ${finalScore.toFixed(3)} (pos: ${positiveScore.toFixed(3)}, neg: ${negativeScore.toFixed(3)}) — "${text.slice(0, 60)}"`,
     )
 
-    return typeof score === 'number' ? score : 0
+    return finalScore
   } catch (err) {
     console.error('Cincinnati classification failed:', err)
     return 0
