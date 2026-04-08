@@ -1,9 +1,5 @@
-import {
-  OutputSchema as RepoEvent,
-  isCommit,
-} from './lexicon/types/com/atproto/sync/subscribeRepos'
 import { AppBskyActorDefs, AtpAgent, ComAtprotoLabelDefs } from '@atproto/api'
-import { FirehoseSubscriptionBase, getOpsByType } from './util/subscription'
+import { FirehoseSubscriptionBase, JetstreamEvent } from './util/subscription'
 import * as fs from 'fs/promises'
 import { Database } from './db'
 import { Actor, DatabaseSchema } from './db/schema'
@@ -26,8 +22,9 @@ import {
 } from './features/mlClassifier'
 
 /**
- * FirehoseSubscription consumes the Bluesky firehose (a real-time stream of all
- * AT Protocol repo events) and filters it down to Cincinnati-related posts.
+ * FirehoseSubscription consumes the Bluesky Jetstream (a real-time JSON stream
+ * of AT Protocol repo events filtered to app.bsky.feed.post) and filters it
+ * down to Cincinnati-related posts.
  *
  * Post inclusion pipeline (per incoming post):
  *   1. Keyword pre-filter  — reject immediately if no Cincinnati keyword in text
@@ -64,8 +61,6 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
   constructor(db: Database, service: string) {
     super(db, service)
     console.log('Initializing FirehoseSubscription...')
-    // Restore the firehose cursor so we resume from where we left off
-    this.getCursor()
     // Assign the startup chain to this.ready so callers can await it.
     // Agent login is async, so the rest of startup runs in a chained promise.
     this.ready = this.initializeAgent().then(async () => {
@@ -131,6 +126,16 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
 
       console.log(`Blocked users found: ${actors.length}`)
       this.blockedUsers.push(...actors)
+
+      if (actors.length > 0) {
+        const { numDeletedRows } = await this.db
+          .deleteFrom('post')
+          .where('author', 'in', actors)
+          .executeTakeFirst()
+        console.log(
+          `Removed ${numDeletedRows} post(s) from blocked users in blocked-users.txt.`,
+        )
+      }
 
       await Promise.all(
         actors.map(async (actor) => {
@@ -330,19 +335,38 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
     }
   }
 
-  // Called for every event on the Bluesky firehose. Non-commit events (likes,
-  // follows, profile updates, etc.) are ignored — we only care about post
-  // creates and deletes.
-  async handleEvent(evt: RepoEvent) {
-    if (!isCommit(evt)) {
-      console.log('Event is not a commit, skipping...')
+  // Called for every Jetstream event. Non-commit events (identity updates, account
+  // changes, etc.) are ignored — we only care about post creates and deletes.
+  async handleEvent(evt: JetstreamEvent) {
+    if (evt.kind !== 'commit' || !evt.commit) {
       return
     }
 
-    const ops = await getOpsByType(evt)
+    const { operation, collection, rkey, cid, record } = evt.commit
 
-    // Collect URIs for posts that were deleted so we can mirror those deletions
-    const postsToDelete = ops.posts.deletes.map((del) => del.uri)
+    // Only process app.bsky.feed.post events
+    if (collection !== 'app.bsky.feed.post') {
+      return
+    }
+
+    const postUri = `at://${evt.did}/app.bsky.feed.post/${rkey}`
+
+    // Mirror deletions — if a user deletes a post on Bluesky, remove it from
+    // the feed database so it stops appearing in the feed skeleton.
+    if (operation === 'delete') {
+      try {
+        this.db.deleteFrom('post').where('uri', 'in', [postUri]).execute()
+        console.log('Successfully deleted post:', postUri)
+      } catch (err) {
+        console.error('Failed to delete post:', err)
+      }
+      return
+    }
+
+    if (operation !== 'create' || !record || !cid) {
+      return
+    }
+
     const postsToCreate: DatabaseSchema['post'][] = []
 
     // Minimum ML confidence score (0–1) for an unknown author's post to be
@@ -352,96 +376,82 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
       process.env.CINCINNATI_THRESHOLD ?? '0.4',
     )
 
-    await Promise.all(
-      ops.posts.creates.map(async (create) => {
-        const actor = this.getAuthor(create.author)
-        const postText = create.record.text ?? ''
+    const author = evt.did
+    const actor = this.getAuthor(author)
+    const postText = record.text ?? ''
 
-        // Fast reject: skip posts with no connection to Cincinnati at all
-        if (!actor && !hasCincinnatiKeywords(postText)) {
-          return Promise.resolve()
-        }
+    // Fast reject: skip posts with no connection to Cincinnati at all
+    if (!actor && !hasCincinnatiKeywords(postText)) {
+      return
+    }
 
-        // Fast reject: skip non-English posts
-        const langs: string[] | undefined = create.record.langs
-        if (langs && langs.length > 0 && !langs.some((l) => l.startsWith('en'))) {
-          return Promise.resolve()
-        }
+    // Fast reject: skip non-English posts
+    const langs: string[] | undefined = record.langs
+    if (langs && langs.length > 0 && !langs.some((l) => l.startsWith('en'))) {
+      return
+    }
 
-        // Skip blocked authors
-        if (actor && (actor.blocked || this.blockedUsers.includes(actor.did))) {
-          console.log('Author is blocked, skipping post')
-          return Promise.resolve()
-        }
+    // Skip blocked authors
+    if (this.blockedUsers.includes(author) || (actor && actor.blocked)) {
+      console.log('Author is blocked, skipping post')
+      return
+    }
 
-        // Fast label-based NSFW check (no ML cost)
-        if (isNSFW(create.record.labels)) {
-          return Promise.resolve()
-        }
+    // Fast label-based NSFW check (no ML cost)
+    if (isNSFW(record.labels as any)) {
+      return
+    }
 
-        // Combine post text with the author's bio so the classifier has more
-        // signal — reduces false positives for short posts that lack keywords.
-        const mlText = [postText, actor?.description].filter(Boolean).join(' ')
+    // Combine post text with the author's bio so the classifier has more
+    // signal — reduces false positives for short posts that lack keywords.
+    const mlText = [postText, actor?.description].filter(Boolean).join(' ')
 
-        // Run ML NSFW + Cincinnati relevance in parallel
-        const [mlNSFW, mlScore] = await Promise.all([
-          classifyNSFW(mlText),
-          classifyCincinnatiRelevance(mlText),
-        ])
+    // Run ML NSFW + Cincinnati relevance in parallel
+    const [mlNSFW, mlScore] = await Promise.all([
+      classifyNSFW(mlText),
+      classifyCincinnatiRelevance(mlText),
+    ])
 
-        if (mlNSFW) {
-          console.log(
-            `[${create.uri}] ML flagged as NSFW — skipping (mlScore=${mlScore.toFixed(3)})`,
-          )
-          return Promise.resolve()
-        }
+    if (mlNSFW) {
+      console.log(
+        `[${postUri}] ML flagged as NSFW — skipping (mlScore=${mlScore.toFixed(3)})`,
+      )
+      return
+    }
 
-        // Unknown-author posts must clear the Cincinnati relevance threshold
-        if (!actor && mlScore < CINCINNATI_THRESHOLD) {
-          console.log(
-            `[${create.uri}] Below Cincinnati threshold — skipping (mlScore=${mlScore.toFixed(3)}, threshold=${CINCINNATI_THRESHOLD})`,
-          )
-          return Promise.resolve()
-        }
+    // Unknown-author posts must clear the Cincinnati relevance threshold
+    if (!actor && mlScore < CINCINNATI_THRESHOLD) {
+      console.log(
+        `[${postUri}] Below Cincinnati threshold — skipping (mlScore=${mlScore.toFixed(3)}, threshold=${CINCINNATI_THRESHOLD})`,
+      )
+      return
+    }
 
-        const validPost = await validatePostData({
-          uri: create.uri,
-          cid: create.cid,
-          indexedAt: new Date().toISOString(),
-          author: create.author,
-          text: postText,
-          mlScore,
-        })
+    const validPost = await validatePostData({
+      uri: postUri,
+      cid,
+      indexedAt: new Date().toISOString(),
+      author,
+      text: postText,
+      mlScore,
+    })
 
-        if (!actor && mlScore >= CINCINNATI_THRESHOLD) {
-          await handleCincinnatiAuthor(
-            this.db,
-            this.agent,
-            this.cincinnatiUsers,
-            create.author,
-          )
-        }
+    if (!actor && mlScore >= CINCINNATI_THRESHOLD) {
+      await handleCincinnatiAuthor(
+        this.db,
+        this.agent,
+        this.cincinnatiUsers,
+        author,
+      )
+    }
 
-        if (validPost) {
-          console.log(
-            `Valid post ready for insertion: ${validPost.uri} (mlScore=${mlScore.toFixed(3)})`,
-          )
-          postsToCreate.push(validPost)
-        } else {
-          console.error('Post validation failed:', create)
-        }
-      }),
-    )
-
-    // Mirror deletions — if a user deletes a post on Bluesky, remove it from
-    // the feed database so it stops appearing in the feed skeleton.
-    if (postsToDelete.length > 0) {
-      try {
-        this.db.deleteFrom('post').where('uri', 'in', postsToDelete).execute()
-        console.log('Successfully deleted posts')
-      } catch (err) {
-        console.error('Failed to delete posts:', err)
-      }
+    if (validPost) {
+      console.log(
+        `Valid post ready for insertion: ${validPost.uri} (mlScore=${mlScore.toFixed(3)})`,
+      )
+      postsToCreate.push(validPost)
+    } else {
+      console.error('Post validation failed for uri:', postUri)
     }
 
     if (postsToCreate.length > 0) {
@@ -459,18 +469,18 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
       }
     }
 
-    // Persist the firehose cursor so the feed can resume from this position
-    // after a restart instead of replaying the entire event history.
+    // Persist the Jetstream cursor (time_us) so the feed can resume from this
+    // position after a restart instead of replaying the entire event history.
     this.db
       .updateTable('sub_state')
-      .set({ cursor: parseInt(evt.seq.toString(), 10) })
+      .set({ cursor: evt.time_us })
       .where('service', '=', this.service)
       .execute()
   }
 
-  // Reads the last known cursor from sub_state. If the table is empty (first
-  // run) or the stored value is invalid, initialises/resets the cursor to 0,
-  // which tells the firehose relay to start streaming from the live head.
+  // Reads the last known cursor (Jetstream time_us) from sub_state.
+  // A cursor of 0 means "start from live head" — Jetstream will omit the
+  // cursor param in that case. Returns undefined if the row doesn't exist yet.
   async getCursor(): Promise<{ cursor?: number }> {
     const res = await this.db
       .selectFrom('sub_state')
@@ -479,26 +489,11 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
       .executeTakeFirst()
 
     if (!res) {
-      console.warn('⚠️ sub_state table is empty. Initializing cursor at 0.')
-      await this.db
-        .insertInto('sub_state')
-        .values({ service: this.service, cursor: 0 })
-        .onConflict((oc) => oc.doNothing())
-        .execute()
-      return { cursor: 0 }
+      console.warn('⚠️ sub_state row not found — will start from live head.')
+      return {}
     }
 
-    if (!Number.isInteger(res.cursor)) {
-      console.error('🚨 Invalid cursor found:', res.cursor, '- Resetting to 0')
-      await this.db
-        .updateTable('sub_state')
-        .set({ cursor: 0 })
-        .where('service', '=', this.service)
-        .execute()
-      return { cursor: 0 }
-    }
-
-    console.log('✅ Loaded cursor:', res.cursor)
+    console.log('✅ Loaded cursor (time_us):', res.cursor)
     return { cursor: res.cursor }
   }
 }
