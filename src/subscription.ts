@@ -362,6 +362,12 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
           return Promise.resolve()
         }
 
+        // Fast reject: skip non-English posts
+        const langs: string[] | undefined = create.record.langs
+        if (langs && langs.length > 0 && !langs.some((l) => l.startsWith('en'))) {
+          return Promise.resolve()
+        }
+
         // Skip blocked authors
         if (actor && (actor.blocked || this.blockedUsers.includes(actor.did))) {
           console.log('Author is blocked, skipping post')
