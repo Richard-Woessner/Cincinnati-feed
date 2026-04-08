@@ -26,7 +26,7 @@ import * as dotenv from 'dotenv'
 dotenv.config()
 
 import path from 'path'
-import { BskyAgent } from '@atproto/api'
+import { AtpAgent } from '@atproto/api'
 import { createDb, migrateToLatest } from '../src/db'
 import { hasCincinnatiKeywords, sanitizeString } from '../src/utils/helpers'
 import {
@@ -52,7 +52,7 @@ async function main() {
   const db = createDb(DB_LOCATION)
   await migrateToLatest(db)
 
-  const agent = new BskyAgent({ service: 'https://bsky.social' })
+  const agent = new AtpAgent({ service: 'https://bsky.social' })
   console.log('Logging in to Bluesky...')
   await agent.login({
     identifier: process.env.FEEDGEN_PUBLISHER_DID!,

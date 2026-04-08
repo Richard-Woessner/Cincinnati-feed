@@ -41,3 +41,19 @@ export const isNSFW = (
 
   return false
 }
+
+const NSFW_LABEL_VALUES = [
+  'porn',
+  'nsfw',
+  'sexual',
+  'nsfw:explicit',
+  'adult',
+  'graphic-media',
+]
+
+export const isNSFWProfile = (
+  labels: ComAtprotoLabelDefs.Label[] | undefined,
+): boolean => {
+  if (!labels || labels.length === 0) return false
+  return labels.some((label) => NSFW_LABEL_VALUES.includes(label.val))
+}

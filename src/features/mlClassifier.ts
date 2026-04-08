@@ -26,6 +26,8 @@ const CINCINNATI_LABELS = [
   'this post mentions Cincinnati sports like the Bengals, Reds, FC Cincinnati, or UC Bearcats',
   'this post mentions Cincinnati landmarks like Skyline Chili, the Banks, Eden Park, or Music Hall',
   'this post discusses local Cincinnati news, events, or politics',
+  'this post mentions Cincinnati culture, history, or community',
+  'this post mentions Cincinnati universities like University of Cincinnati or Xavier',
   // Negative signals — be broad
   'this post has nothing to do with Cincinnati Ohio',
   'this post is about software development, programming, or technology',

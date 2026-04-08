@@ -9,6 +9,7 @@ export interface DatabaseSchema {
   }
   actor: {
     did: string
+    name: string
     description: string
     blocked: boolean | 0 | 1
   }
@@ -33,6 +34,7 @@ export type SubState = {
 
 export type Actor = {
   did: string
+  name: string
   description: string
   blocked: boolean | 0 | 1
 }

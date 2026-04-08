@@ -2,7 +2,7 @@ import {
   OutputSchema as RepoEvent,
   isCommit,
 } from './lexicon/types/com/atproto/sync/subscribeRepos'
-import { AppBskyActorDefs, BskyAgent, ComAtprotoLabelDefs } from '@atproto/api'
+import { AppBskyActorDefs, AtpAgent, ComAtprotoLabelDefs } from '@atproto/api'
 import { FirehoseSubscriptionBase, getOpsByType } from './util/subscription'
 import * as fs from 'fs/promises'
 import { Database } from './db'
@@ -47,7 +47,7 @@ import {
  *   6. Warm up the ML classifier models (downloads on first run ~150 MB)
  */
 export class FirehoseSubscription extends FirehoseSubscriptionBase {
-  private agent = new BskyAgent({ service: 'https://bsky.social' })
+  private agent = new AtpAgent({ service: 'https://bsky.social' })
   private fileHandle: fs.FileHandle | null = null
   // DIDs from blocked-users.txt — these authors' posts are always skipped
   private blockedUsers: string[] = []
@@ -266,6 +266,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
             .insertInto('actor')
             .values({
               did: profile.did,
+              name: sanitizeString(profile.displayName ?? '') ?? '',
               description: sanitizeString(profile.description),
               blocked: 0,
             })
@@ -277,28 +278,29 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
     console.log('Completed search for Cincinnati users.')
   }
 
-  // Reads cincinnati-users.txt (one DID per line) and inserts each into the
-  // actor table. These are the manually curated seed accounts that bootstrap
-  // the social-graph discovery in SearchForCincinnatiUsers.
+  // Reads cincinnati-users.json and inserts each entry into the actor table.
+  // These are the manually curated seed accounts that bootstrap the
+  // social-graph discovery in SearchForCincinnatiUsers.
   private async seedActorsFromFile() {
     console.log('Seeding actors from file...')
     try {
-      const filePath = path.join(process.cwd(), 'cincinnati-users.txt')
+      const filePath = path.join(process.cwd(), 'cincinnati-users.json')
       console.log(`Reading actors from: ${filePath}`)
       const fileContent = await fs.readFile(filePath, 'utf-8')
-      const actors = fileContent.trim().split('\n')
+      const actors: { did: string; name: string; bio: string }[] =
+        JSON.parse(fileContent)
       console.log(`Found ${actors.length} actors to seed.`)
 
       await Promise.all(
-        actors.map(async (did) => {
+        actors.map(async ({ did, name, bio }) => {
           console.log(`Seeding actor DID: ${did}`)
           try {
-            const profile = await this.agent.getProfile({ actor: did })
             await this.db
               .insertInto('actor')
               .values({
-                did: did,
-                description: sanitizeString(profile.data.description || ''),
+                did,
+                name: sanitizeString(name) ?? '',
+                description: sanitizeString(bio) ?? '',
                 blocked: 0,
               })
               .onConflict((oc) => oc.doNothing())
