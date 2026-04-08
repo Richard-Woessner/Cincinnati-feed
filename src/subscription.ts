@@ -442,6 +442,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
         this.agent,
         this.cincinnatiUsers,
         author,
+        this.blockedUsers,
       )
     }
 

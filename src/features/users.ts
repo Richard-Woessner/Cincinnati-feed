@@ -15,8 +15,14 @@ export async function handleCincinnatiAuthor(
   agent: AtpAgent,
   cincinnatiUsers: Actor[],
   did: string,
+  blockedUsers: string[] = [],
 ): Promise<void> {
   try {
+    if (blockedUsers.includes(did)) {
+      console.log(`[${did}] DID is blocked — skipping handleCincinnatiAuthor`)
+      return
+    }
+
     const existing = cincinnatiUsers.find((actor) => actor.did === did)
 
     if (existing) return
