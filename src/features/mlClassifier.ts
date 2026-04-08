@@ -3,6 +3,9 @@
 // dynamic import() natively.
 
 const NSFW_THRESHOLD = parseFloat(process.env.NSFW_THRESHOLD ?? '0.8')
+const CINCINNATI_THRESHOLD = parseFloat(
+  process.env.CINCINNATI_THRESHOLD ?? '0.5',
+)
 
 // A single zero-shot pipeline handles both Cincinnati relevance and NSFW
 // detection. michellejieli/NSFW_text_classifier has no ONNX export and
@@ -23,8 +26,10 @@ const CINCINNATI_LABELS = [
   'this post mentions Cincinnati sports like the Bengals, Reds, FC Cincinnati, or UC Bearcats',
   'this post mentions Cincinnati landmarks like Skyline Chili, the Banks, Eden Park, or Music Hall',
   'this post discusses local Cincinnati news, events, or politics',
-  // Negative signal
+  // Negative signals — be broad
   'this post has nothing to do with Cincinnati Ohio',
+  'this post is about software development, programming, or technology',
+  'this post is about national or international news unrelated to Cincinnati',
 ]
 
 export async function initClassifiers(): Promise<void> {
@@ -61,19 +66,24 @@ export async function classifyCincinnatiRelevance(
     const labels = result.labels as string[]
     const scores = result.scores as number[]
 
-    // Sum all positive label scores, subtract the negative one
-    const negativeLabel = 'this post has nothing to do with Cincinnati Ohio'
+    // Sum all positive label scores, penalise noise labels
+    const noiseLabels = [
+      'this post has nothing to do with Cincinnati Ohio',
+      'this post is about software development, programming, or technology',
+      'this post is about national or international news unrelated to Cincinnati',
+    ]
     let positiveScore = 0
     let negativeScore = 0
 
     labels.forEach((label, i) => {
-      if (label === negativeLabel) {
-        negativeScore = scores[i]
+      if (noiseLabels.includes(label)) {
+        negativeScore = Math.max(negativeScore, scores[i])
       } else {
         positiveScore = Math.max(positiveScore, scores[i])
       }
     })
 
+    if (positiveScore < CINCINNATI_THRESHOLD) return 0
     const finalScore = Math.max(0, positiveScore - negativeScore * 0.5)
 
     console.log(
