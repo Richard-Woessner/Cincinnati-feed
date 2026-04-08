@@ -1,4 +1,5 @@
 import WebSocket from 'ws'
+import { decompress } from 'fzstd'
 import { Database } from '../db'
 
 export type JetstreamRecord = {
@@ -44,7 +45,14 @@ export abstract class FirehoseSubscriptionBase {
     ws.on('message', (data: WebSocket.RawData) => {
       let event: JetstreamEvent
       try {
-        event = JSON.parse(data.toString()) as JetstreamEvent
+        let raw: string
+        if (Buffer.isBuffer(data) && data[0] !== 0x7b) {
+          // compressed binary frame — decompress with zstd
+          raw = new TextDecoder().decode(decompress(data))
+        } else {
+          raw = data.toString()
+        }
+        event = JSON.parse(raw) as JetstreamEvent
       } catch (err) {
         console.error('jetstream skipped non-JSON message', err)
         return
