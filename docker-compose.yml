@@ -17,3 +17,5 @@ services:
     volumes:
       - ./data:/app/data
       - ./models:/app/models
+      - ./blocked-users.txt:/app/blocked-users.txt
+      - ./cincinnati-users.json:/app/cincinnati-users.json

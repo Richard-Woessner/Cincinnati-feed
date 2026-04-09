@@ -1,11 +1,32 @@
 // Dynamic import is used because @huggingface/transformers is ESM-only
 // while this project outputs CommonJS. Node.js CJS modules support
 // dynamic import() natively.
+import fs from 'fs'
+import path from 'path'
 
 const NSFW_THRESHOLD = parseFloat(process.env.NSFW_THRESHOLD ?? '0.8')
 const CINCINNATI_THRESHOLD = parseFloat(
   process.env.CINCINNATI_THRESHOLD ?? '0.5',
 )
+
+type WeightedLabel = { label: string; weight: number }
+
+const LABELS_PATH = path.resolve('./labels.json')
+
+function loadLabels(): WeightedLabel[] {
+  return JSON.parse(fs.readFileSync(LABELS_PATH, 'utf-8')) as WeightedLabel[]
+}
+
+let weightedLabels: WeightedLabel[] = loadLabels()
+
+fs.watchFile(LABELS_PATH, { interval: 5000 }, () => {
+  try {
+    weightedLabels = loadLabels()
+    console.log('Labels reloaded:', weightedLabels.length, 'entries')
+  } catch (err) {
+    console.error('Failed to reload labels.json:', err)
+  }
+})
 
 // A single zero-shot pipeline handles both Cincinnati relevance and NSFW
 // detection. michellejieli/NSFW_text_classifier has no ONNX export and
@@ -18,21 +39,6 @@ let zeroShotPipeline:
       options?: Record<string, unknown>,
     ) => Promise<any>)
   | null = null
-
-const CINCINNATI_LABELS = [
-  // Positive signals — be specific
-  'this post mentions Cincinnati, Ohio',
-  'this post is about a Cincinnati neighborhood like Over-the-Rhine, Hyde Park, Clifton, or Northside',
-  'this post mentions Cincinnati sports like the Bengals, Reds, FC Cincinnati, or UC Bearcats',
-  'this post mentions Cincinnati landmarks like Skyline Chili, the Banks, Eden Park, or Music Hall',
-  'this post discusses local Cincinnati news, events, or politics',
-  'this post mentions Cincinnati culture, history, or community',
-  'this post mentions Cincinnati universities like University of Cincinnati or Xavier',
-  // Negative signals — be broad
-  'this post has nothing to do with Cincinnati Ohio',
-  'this post is about software development, programming, or technology',
-  'this post is about national or international news unrelated to Cincinnati',
-]
 
 export async function initClassifiers(): Promise<void> {
   console.log('Initializing ML classifiers (first run will download models)...')
@@ -60,39 +66,39 @@ export async function classifyCincinnatiRelevance(
   if (!zeroShotPipeline) return 0
 
   try {
-    const result = await zeroShotPipeline(text, CINCINNATI_LABELS, {
-      multi_label: true,
-      hypothesis_template: 'This text is {}.',
-    })
-
-    const labels = result.labels as string[]
-    const scores = result.scores as number[]
-
-    // Sum all positive label scores, penalise noise labels
-    const noiseLabels = [
-      'this post has nothing to do with Cincinnati Ohio',
-      'this post is about software development, programming, or technology',
-      'this post is about national or international news unrelated to Cincinnati',
-    ]
-    let positiveScore = 0
-    let negativeScore = 0
-
-    labels.forEach((label, i) => {
-      if (noiseLabels.includes(label)) {
-        negativeScore = Math.max(negativeScore, scores[i])
-      } else {
-        positiveScore = Math.max(positiveScore, scores[i])
-      }
-    })
-
-    if (positiveScore < CINCINNATI_THRESHOLD) return 0
-    const finalScore = Math.max(0, positiveScore - negativeScore * 0.5)
-
-    console.log(
-      `Cincinnati relevance: ${finalScore.toFixed(3)} (pos: ${positiveScore.toFixed(3)}, neg: ${negativeScore.toFixed(3)}) — "${text.slice(0, 60)}"`,
+    const result = await zeroShotPipeline(
+      text,
+      weightedLabels.map((l) => l.label),
+      { multi_label: true, hypothesis_template: '{}.' },
     )
 
-    return finalScore
+    const resultLabels = result.labels as string[]
+    const resultScores = result.scores as number[]
+
+    const scoreMap = new Map<string, number>()
+    resultLabels.forEach((label, i) => scoreMap.set(label, resultScores[i]))
+
+    let weightedSum = 0
+    let totalPositiveWeight = 0
+
+    for (const { label, weight } of weightedLabels) {
+      const modelScore = scoreMap.get(label) ?? 0
+      weightedSum += modelScore * weight
+      if (weight > 0) totalPositiveWeight += weight
+    }
+
+    const normalized = Math.max(
+      0,
+      Math.min(1, weightedSum / totalPositiveWeight),
+    )
+
+    if (normalized < CINCINNATI_THRESHOLD) return 0
+
+    console.log(
+      `Cincinnati score: ${normalized.toFixed(3)} — "${text.slice(0, 60)}"`,
+    )
+
+    return normalized
   } catch (err) {
     console.error('Cincinnati classification failed:', err)
     return 0

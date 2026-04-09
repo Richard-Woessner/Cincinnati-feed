@@ -1,0 +1,43 @@
+[
+  { "label": "this post mentions Cincinnati, Ohio", "weight": 1.0 },
+  {
+    "label": "this post is about a Cincinnati neighborhood like Over-the-Rhine, Hyde Park, Clifton, or Northside",
+    "weight": 1.0
+  },
+  {
+    "label": "this post mentions Cincinnati sports like the Bengals, Reds, FC Cincinnati, or UC Bearcats",
+    "weight": 0.3
+  },
+  {
+    "label": "this post mentions Cincinnati landmarks like Skyline Chili, the Banks, Eden Park, or Music Hall",
+    "weight": 0.8
+  },
+  {
+    "label": "this post discusses local Cincinnati news, events, or politics",
+    "weight": 0.9
+  },
+  {
+    "label": "this post mentions Cincinnati culture, history, or community",
+    "weight": 0.8
+  },
+  {
+    "label": "this post mentions Cincinnati universities like University of Cincinnati or Xavier",
+    "weight": 0.8
+  },
+  {
+    "label": "this post has nothing to do with Cincinnati Ohio",
+    "weight": -0.8
+  },
+  {
+    "label": "this post is about software development, programming, or technology",
+    "weight": -0.8
+  },
+  {
+    "label": "this post is about national or international news unrelated to Cincinnati",
+    "weight": -0.8
+  },
+  {
+    "label": "this post is from a bot account or is likely spam",
+    "weight": -0.8
+  }
+]
