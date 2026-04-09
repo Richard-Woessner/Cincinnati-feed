@@ -19,6 +19,8 @@ function loadLabels(): WeightedLabel[] {
 
 let weightedLabels: WeightedLabel[] = loadLabels()
 
+console.log('Loaded labels:', weightedLabels.length, 'entries')
+
 fs.watchFile(LABELS_PATH, { interval: 5000 }, () => {
   try {
     weightedLabels = loadLabels()
