@@ -396,7 +396,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
       try {
         this.db.deleteFrom('post').where('uri', 'in', [postUri]).execute()
         this.stats.deleted++
-        console.debug('Deleted post:', postUri)
+        console.trace('Deleted post:', postUri)
       } catch (err) {
         console.error('Failed to delete post:', err)
       }
