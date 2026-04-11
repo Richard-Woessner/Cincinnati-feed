@@ -53,7 +53,11 @@ export async function handleCincinnatiAuthor(
         description: sanitizeString(bio),
         blocked: 0,
       })
-      .onConflict((oc) => oc.doNothing())
+      .onConflict((oc) =>
+        oc.column('did').doUpdateSet((eb) => ({
+          name: eb.ref('excluded.name'),
+        })),
+      )
       .execute()
 
     cincinnatiUsers.push({

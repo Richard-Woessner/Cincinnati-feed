@@ -11,6 +11,7 @@
     "unpublishFeed": "ts-node scripts/unpublishFeedGen.ts",
     "setup-models": "ts-node scripts/setup-models.ts",
     "backfill": "ts-node scripts/backfillPosts.ts",
+    "backfill:names": "ts-node scripts/backfillActorNames.ts",
     "start": "ts-node src/index.ts",
     "build": "tsc"
   },

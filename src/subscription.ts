@@ -346,7 +346,11 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
                 description: sanitizeString(bio) ?? '',
                 blocked: 0,
               })
-              .onConflict((oc) => oc.doNothing())
+              .onConflict((oc) =>
+                oc.column('did').doUpdateSet((eb) => ({
+                  name: eb.ref('excluded.name'),
+                })),
+              )
               .execute()
             logger.debug(`Successfully seeded actor ${did}.`)
           } catch (err) {
