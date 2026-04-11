@@ -1,5 +1,6 @@
 import { AppBskyActorDefs, AtpAgent, ComAtprotoLabelDefs } from '@atproto/api'
 import { FirehoseSubscriptionBase, JetstreamEvent } from './util/subscription'
+import { mutedDids, whitelistedDids, refreshLists } from './lists'
 import * as fs from 'fs/promises'
 import { Database } from './db'
 import { Actor, DatabaseSchema } from './db/schema'
@@ -48,19 +49,15 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
   private fileHandle: fs.FileHandle | null = null
   // DIDs from blocked-users.txt — these authors' posts are always skipped
   private blockedUsers: string[] = []
-  // DIDs muted by the feed publisher account — their posts are skipped and purged
-  private mutedUsers = new Set<string>()
   // Social graph cache built during SearchForCincinnatiUsers
   private followersMap: FollowerMap[] = []
   // In-memory copy of the actor table used for O(n) author lookups per event
   private cincinnatiUsers: Actor[] = []
 
-  // Tracks how many times loadMutes has been called to distinguish initial load from refresh
-  private mutesLoadCount = 0
-
   // Hourly rolling counters — reset after each logHourlySummary() call
   private stats = {
     inserted: 0,
+    whitelistedPassed: 0,
     rejectedBlocked: 0,
     rejectedMuted: 0,
     rejectedLabelNSFW: 0,
@@ -84,8 +81,8 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
     this.ready = this.initializeAgent().then(async () => {
       console.log('Agent initialized.')
       await this.getBlockedUsers()
-      await this.loadMutes()
-      setInterval(() => this.loadMutes(), 10 * 60 * 1000)
+      await this.refreshListsAndCleanup()
+      setInterval(() => this.refreshListsAndCleanup(), 10 * 60 * 1000)
       setInterval(() => this.logHourlySummary(), 60 * 60 * 1000)
 
       // SEARCH_LOOP_ATTEMPTS controls how many parallel discovery passes to run.
@@ -177,46 +174,24 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
     }
   }
 
-  // Fetches all accounts muted by the feed publisher via app.bsky.graph.getMutes,
-  // deletes any of their existing posts from the DB, and refreshes the in-memory
-  // mutedUsers set. Called at startup and every 10 minutes.
-  private async loadMutes() {
-    this.mutesLoadCount++
-    const loadLabel =
-      this.mutesLoadCount === 1
-        ? 'initial load'
-        : `refresh #${this.mutesLoadCount}`
-    console.log(`Loading muted accounts (${loadLabel})...`)
+  // Refreshes the mutes and whitelist sets via lists.ts, then deletes any DB
+  // posts from newly-muted accounts. Called at startup and every 10 minutes.
+  private async refreshListsAndCleanup() {
     try {
-      const freshMutes = new Set<string>()
-      let cursor: string | undefined
+      await refreshLists(this.agent)
 
-      do {
-        const res = await this.agent.api.app.bsky.graph.getMutes({
-          limit: 100,
-          cursor,
-        })
-        for (const actor of res.data.mutes) {
-          freshMutes.add(actor.did)
-        }
-        cursor = res.data.cursor
-      } while (cursor)
-
-      this.mutedUsers = freshMutes
-      console.log(`Loaded ${this.mutedUsers.size} muted account(s).`)
-
-      if (this.mutedUsers.size > 0) {
-        const mutedDids = Array.from(this.mutedUsers)
+      if (mutedDids.size > 0) {
+        const dids = Array.from(mutedDids)
         const { numDeletedRows } = await this.db
           .deleteFrom('post')
-          .where('author', 'in', mutedDids)
+          .where('author', 'in', dids)
           .executeTakeFirst()
         if (numDeletedRows > 0) {
           console.log(`Removed ${numDeletedRows} post(s) from muted accounts.`)
         }
       }
     } catch (err) {
-      console.error('Failed to load mutes:', err)
+      console.error('Failed to refresh lists:', err)
     }
   }
 
@@ -445,6 +420,39 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
     const actor = this.getAuthor(author)
     const postText = record.text ?? ''
 
+    // Whitelist bypass — always include posts from whitelisted accounts without
+    // any keyword, language, block, mute, NSFW, or ML checks. Input validation
+    // (validatePostData) still runs as a system-boundary safety check.
+    if (whitelistedDids.has(author)) {
+      const validPost = await validatePostData({
+        uri: postUri,
+        cid,
+        indexedAt: new Date().toISOString(),
+        author,
+        text: postText,
+        mlScore: 1.0,
+      })
+      if (validPost) {
+        try {
+          this.db
+            .insertInto('post')
+            .values([validPost])
+            .onConflict((oc) => oc.doNothing())
+            .execute()
+          this.stats.whitelistedPassed++
+          console.log(`[WHITELISTED] ${postUri}`)
+        } catch (err) {
+          console.error('Failed to insert whitelisted post:', err)
+        }
+      }
+      this.db
+        .updateTable('sub_state')
+        .set({ cursor: evt.time_us })
+        .where('service', '=', this.service)
+        .execute()
+      return
+    }
+
     // Fast reject: skip posts with no connection to Cincinnati at all
     if (!actor && !hasCincinnatiKeywords(postText)) {
       this.stats.rejectedKeyword++
@@ -468,7 +476,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
     }
 
     // Skip muted authors
-    if (this.mutedUsers.has(author)) {
+    if (mutedDids.has(author)) {
       this.stats.rejectedMuted++
       console.log(`[${postUri}] Post blocked — author is muted (did=${author})`)
       return
@@ -565,6 +573,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
   private logHourlySummary() {
     const {
       inserted,
+      whitelistedPassed,
       rejectedBlocked,
       rejectedMuted,
       rejectedLabelNSFW,
@@ -577,6 +586,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
     console.log(
       `[Hourly Summary] ` +
         `allowed=${inserted} | ` +
+        `whitelisted=${whitelistedPassed} | ` +
         `deleted=${deleted} | ` +
         `blocked=${rejectedBlocked} | ` +
         `muted=${rejectedMuted} | ` +
@@ -588,6 +598,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
     )
     this.stats = {
       inserted: 0,
+      whitelistedPassed: 0,
       rejectedBlocked: 0,
       rejectedMuted: 0,
       rejectedLabelNSFW: 0,
