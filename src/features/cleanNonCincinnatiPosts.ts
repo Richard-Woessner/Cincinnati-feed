@@ -1,12 +1,11 @@
 import { Database } from '../db'
-import { isCincinnatiUser } from '../utils/helpers'
+import { isCincinnatiUser, logger } from '../utils/helpers'
 
 export async function cleanupNonCincinnatiPosts(db: Database): Promise<void> {
-  console.log('Cleaning up non-Cincinnati and blocked user posts...')
+  logger.info('Cleaning up non-Cincinnati and blocked user posts...')
 
   try {
-    // Log the current state before deletion
-    console.log('Preparing to delete posts...')
+    logger.debug('Preparing to delete posts...')
 
     // Remove actors whose bio does not contain 'cincy', 'cincinnati', or 'cinci'
     const actors = await db
@@ -14,19 +13,19 @@ export async function cleanupNonCincinnatiPosts(db: Database): Promise<void> {
       .select(['did', 'description'])
       .execute()
 
-    console.log(`Checking ${actors.length} actors for Cincinnati relevance...`)
+    logger.info(`Checking ${actors.length} actors for Cincinnati relevance...`)
     const nonCincyDids = actors
       .filter(
         (actor) => !actor.description || !isCincinnatiUser(actor.description),
       )
       .map((actor) => actor.did)
 
-    console.log(`Found ${nonCincyDids.length} non-Cincinnati actors to remove.`)
+    logger.info(`Found ${nonCincyDids.length} non-Cincinnati actors to remove.`)
 
     if (nonCincyDids.length > 0) {
       await db.deleteFrom('actor').where('did', 'in', nonCincyDids).execute()
 
-      console.log(`Removed ${nonCincyDids.length} non-Cincinnati actors.`)
+      logger.info(`Removed ${nonCincyDids.length} non-Cincinnati actors.`)
     }
     // Delete posts whose author is not in the actor table
     await db
@@ -44,8 +43,8 @@ export async function cleanupNonCincinnatiPosts(db: Database): Promise<void> {
       )
       .execute()
 
-    console.log('Cleaned up non-Cincinnati and blocked user posts.')
+    logger.info('Cleaned up non-Cincinnati and blocked user posts.')
   } catch (err) {
-    console.error('Failed to cleanup posts:', err)
+    logger.error('Failed to cleanup posts:', err)
   }
 }

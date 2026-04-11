@@ -2,7 +2,7 @@ import { AtpAgent } from '@atproto/api'
 import * as fs from 'fs/promises'
 import { Database } from '../db'
 import { Actor } from '../db/schema'
-import { sanitizeString } from '../utils/helpers'
+import { sanitizeString, logger } from '../utils/helpers'
 import { classifyCincinnatiRelevance } from './mlClassifier'
 import { isNSFWProfile } from './isNSFW'
 
@@ -19,7 +19,7 @@ export async function handleCincinnatiAuthor(
 ): Promise<void> {
   try {
     if (blockedUsers.includes(did)) {
-      console.log(`[${did}] DID is blocked — skipping handleCincinnatiAuthor`)
+      logger.debug(`[${did}] DID is blocked — skipping handleCincinnatiAuthor`)
       return
     }
 
@@ -30,7 +30,7 @@ export async function handleCincinnatiAuthor(
     const profile = await agent.getProfile({ actor: did })
 
     if (isNSFWProfile(profile.data.labels)) {
-      console.log(`[${did}] Profile is NSFW — skipping`)
+      logger.debug(`[${did}] Profile is NSFW — skipping`)
       return
     }
 
@@ -39,7 +39,7 @@ export async function handleCincinnatiAuthor(
     const bioScore = await classifyCincinnatiRelevance(bio ?? '')
 
     if (bioScore < PROFILE_CINCINNATI_THRESHOLD) {
-      console.log(
+      logger.debug(
         `[${did}] Profile bio below Cincinnati threshold — skipping (bioScore=${bioScore.toFixed(3)})`,
       )
       return
@@ -70,7 +70,7 @@ export async function handleCincinnatiAuthor(
     fileUsers.push({ did, name, bio: bio ?? '' })
     await fs.writeFile(filePath, JSON.stringify(fileUsers, null, 2))
   } catch (err) {
-    console.error('Error processing author:', err)
+    logger.error('Error processing author:', err)
   }
 }
 

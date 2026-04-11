@@ -1,4 +1,5 @@
 import { AtpAgent } from '@atproto/api'
+import { logger } from './utils/helpers'
 
 // DIDs muted by the feed publisher — their posts are always skipped.
 export const mutedDids = new Set<string>()
@@ -30,7 +31,7 @@ async function loadMutes(agent: AtpAgent): Promise<void> {
     cursor = res.data.cursor
   } while (cursor)
 
-  console.log(`Loaded ${mutedDids.size} muted account(s).`)
+  logger.info(`Loaded ${mutedDids.size} muted account(s).`)
 }
 
 async function loadWhitelist(agent: AtpAgent): Promise<void> {
@@ -49,5 +50,5 @@ async function loadWhitelist(agent: AtpAgent): Promise<void> {
     cursor = res.data.cursor
   } while (cursor)
 
-  console.log(`Loaded ${whitelistedDids.size} whitelisted account(s).`)
+  logger.info(`Loaded ${whitelistedDids.size} whitelisted account(s).`)
 }

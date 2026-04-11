@@ -3,6 +3,7 @@
 // dynamic import() natively.
 import fs from 'fs'
 import path from 'path'
+import { logger } from '../utils/helpers'
 
 const NSFW_THRESHOLD = parseFloat(process.env.NSFW_THRESHOLD ?? '0.8')
 const CINCINNATI_THRESHOLD = parseFloat(
@@ -19,14 +20,14 @@ function loadLabels(): WeightedLabel[] {
 
 let weightedLabels: WeightedLabel[] = loadLabels()
 
-console.log('Loaded labels:', weightedLabels.length, 'entries')
+logger.info('Loaded labels:', weightedLabels.length, 'entries')
 
 fs.watchFile(LABELS_PATH, { interval: 5000 }, () => {
   try {
     weightedLabels = loadLabels()
-    console.log('Labels reloaded:', weightedLabels.length, 'entries')
+    logger.info('Labels reloaded:', weightedLabels.length, 'entries')
   } catch (err) {
-    console.error('Failed to reload labels.json:', err)
+    logger.error('Failed to reload labels.json:', err)
   }
 })
 
@@ -43,7 +44,7 @@ let zeroShotPipeline:
   | null = null
 
 export async function initClassifiers(): Promise<void> {
-  console.log('Initializing ML classifiers (first run will download models)...')
+  logger.info('Initializing ML classifiers (first run will download models)...')
   const start = Date.now()
   try {
     const { pipeline } = await import('@huggingface/transformers')
@@ -51,9 +52,9 @@ export async function initClassifiers(): Promise<void> {
       'zero-shot-classification',
       'Xenova/nli-deberta-v3-small',
     )
-    console.log(`ML classifiers initialized in ${Date.now() - start}ms`)
+    logger.info(`ML classifiers initialized in ${Date.now() - start}ms`)
   } catch (err) {
-    console.error('Failed to initialize ML classifiers:', err)
+    logger.error('Failed to initialize ML classifiers:', err)
     // Leave pipelines as null — the callers handle null gracefully
   }
 }
@@ -96,13 +97,13 @@ export async function classifyCincinnatiRelevance(
 
     if (normalized < CINCINNATI_THRESHOLD) return 0
 
-    console.log(
+    logger.debug(
       `Cincinnati score: ${normalized.toFixed(3)} — "${text.slice(0, 60)}"`,
     )
 
     return normalized
   } catch (err) {
-    console.error('Cincinnati classification failed:', err)
+    logger.error('Cincinnati classification failed:', err)
     return 0
   }
 }
@@ -114,7 +115,7 @@ export async function classifyCincinnatiRelevance(
  */
 export async function classifyNSFW(text: string): Promise<boolean> {
   if (!zeroShotPipeline) {
-    console.log(
+    logger.debug(
       'NSFW classifier not ready yet — skipping ML NSFW check (returning false)',
     )
     return false
@@ -130,11 +131,11 @@ export async function classifyNSFW(text: string): Promise<boolean> {
     const score = (result.scores as number[])[nsfwIdx]
     const isNSFW = typeof score === 'number' && score >= NSFW_THRESHOLD
     if (isNSFW) {
-      console.log(`NSFW score: ${score.toFixed(3)} for text: ${text}`)
+      logger.debug(`NSFW score: ${score.toFixed(3)} for text: ${text}`)
     }
     return isNSFW
   } catch (err) {
-    console.error('NSFW classification failed:', err)
+    logger.error('NSFW classification failed:', err)
     return false
   }
 }

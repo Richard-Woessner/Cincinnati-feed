@@ -1,6 +1,7 @@
 import WebSocket from 'ws'
 import { decompress } from 'fzstd'
 import { Database } from '../db'
+import { logger } from '../utils/helpers'
 
 export type JetstreamRecord = {
   text?: string
@@ -54,16 +55,16 @@ export abstract class FirehoseSubscriptionBase {
         }
         event = JSON.parse(raw) as JetstreamEvent
       } catch (err) {
-        console.error('jetstream skipped non-JSON message', err)
+        logger.error('jetstream skipped non-JSON message', err)
         return
       }
       this.handleEvent(event).catch((err) => {
-        console.error('jetstream subscription could not handle message', err)
+        logger.error('jetstream subscription could not handle message', err)
       })
     })
 
     ws.on('close', () => {
-      console.log('jetstream connection closed, reconnecting...')
+      logger.info('jetstream connection closed, reconnecting...')
       setTimeout(
         () => this.run(subscriptionReconnectDelay),
         subscriptionReconnectDelay,
@@ -71,7 +72,7 @@ export abstract class FirehoseSubscriptionBase {
     })
 
     ws.on('error', (err) => {
-      console.error('jetstream connection error', err)
+      logger.error('jetstream connection error', err)
     })
   }
 

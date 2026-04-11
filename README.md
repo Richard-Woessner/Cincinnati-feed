@@ -52,17 +52,18 @@ go/                     # Alternate Go implementation
 
 Key environment variables:
 
-| Variable                       | Default    | Purpose                                      |
-| ------------------------------ | ---------- | -------------------------------------------- |
-| `FEEDGEN_PORT`                 | `3000`     | HTTP listen port                             |
-| `FEEDGEN_HOSTNAME`             | —          | Public hostname (used in DID doc)            |
-| `FEEDGEN_PUBLISHER_DID`        | —          | Bluesky account DID of the feed owner        |
-| `FEEDGEN_SQLITE_LOCATION`      | `:memory:` | SQLite path — use `./data/db.sqlite` in prod |
-| `CINCINNATI_THRESHOLD`         | `0.5`      | Min ML score for unknown-author posts        |
-| `NSFW_THRESHOLD`               | `0.8`      | Max NSFW score before rejection              |
-| `PROFILE_CINCINNATI_THRESHOLD` | `0.6`      | Min ML score for user bio discovery          |
-| `SEARCH_LOOP_ATTEMPTS`         | `0`        | Set >0 to enable the user discovery crawler  |
-| `HF_HOME`                      | `./models` | Hugging Face model cache directory           |
+| Variable                       | Default    | Purpose                                                      |
+| ------------------------------ | ---------- | ------------------------------------------------------------ |
+| `FEEDGEN_PORT`                 | `3000`     | HTTP listen port                                             |
+| `FEEDGEN_HOSTNAME`             | —          | Public hostname (used in DID doc)                            |
+| `FEEDGEN_PUBLISHER_DID`        | —          | Bluesky account DID of the feed owner                        |
+| `FEEDGEN_SQLITE_LOCATION`      | `:memory:` | SQLite path — use `./data/db.sqlite` in prod                 |
+| `CINCINNATI_THRESHOLD`         | `0.5`      | Min ML score for unknown-author posts                        |
+| `NSFW_THRESHOLD`               | `0.8`      | Max NSFW score before rejection                              |
+| `PROFILE_CINCINNATI_THRESHOLD` | `0.6`      | Min ML score for user bio discovery                          |
+| `SEARCH_LOOP_ATTEMPTS`         | `0`        | Set >0 to enable the user discovery crawler                  |
+| `HF_HOME`                      | `./models` | Hugging Face model cache directory                           |
+| `LOG_LEVEL`                    | `info`     | Logging verbosity: `error`, `warn`, `info`, `debug`, `trace` |
 
 ## Running the Server
 

@@ -68,3 +68,30 @@ export function hasCincinnatiKeywords(text: string): boolean {
   const lower = text.toLowerCase()
   return CINCINNATI_KEYWORDS.some((kw) => lower.includes(kw))
 }
+
+/**
+ * Levelled logger. Control verbosity via LOG_LEVEL in .env:
+ *   error  — errors only
+ *   warn   — errors + warnings
+ *   info   — normal operational messages (default)
+ *   debug  — per-post / per-actor filter decisions
+ *   trace  — very high-volume events (e.g. every deleted post)
+ */
+const LOG_LEVELS = { error: 0, warn: 1, info: 2, debug: 3, trace: 4 } as const
+type LogLevel = keyof typeof LOG_LEVELS
+const _raw = (process.env.LOG_LEVEL ?? 'info').toLowerCase() as LogLevel
+const _threshold: number = LOG_LEVELS[_raw] ?? LOG_LEVELS.info
+
+export const logger = {
+  error: (...args: unknown[]) => console.error(...args),
+  warn: (...args: unknown[]) => console.warn(...args),
+  info: (...args: unknown[]) => {
+    if (_threshold >= LOG_LEVELS.info) console.log(...args)
+  },
+  debug: (...args: unknown[]) => {
+    if (_threshold >= LOG_LEVELS.debug) console.log(...args)
+  },
+  trace: (...args: unknown[]) => {
+    if (_threshold >= LOG_LEVELS.trace) console.log(...args)
+  },
+}

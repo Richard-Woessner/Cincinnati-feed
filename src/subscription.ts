@@ -11,6 +11,7 @@ import {
   isCincinnatiUser,
   sanitizeString,
   hasCincinnatiKeywords,
+  logger,
 } from './utils/helpers'
 import { handleCincinnatiAuthor } from './features/users'
 import { validatePostData } from './features/validatePostData'
@@ -75,11 +76,11 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
 
   constructor(db: Database, service: string) {
     super(db, service)
-    console.log('Initializing FirehoseSubscription...')
+    logger.info('Initializing FirehoseSubscription...')
     // Assign the startup chain to this.ready so callers can await it.
     // Agent login is async, so the rest of startup runs in a chained promise.
     this.ready = this.initializeAgent().then(async () => {
-      console.log('Agent initialized.')
+      logger.info('Agent initialized.')
       await this.getBlockedUsers()
       await this.refreshListsAndCleanup()
       setInterval(() => this.refreshListsAndCleanup(), 10 * 60 * 1000)
@@ -92,7 +93,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
       const searchLoopAttempts = parseInt(
         process.env.SEARCH_LOOP_ATTEMPTS ?? '0',
       )
-      console.log(`SEARCH_LOOP_ATTEMPTS: ${searchLoopAttempts}`)
+      logger.info(`SEARCH_LOOP_ATTEMPTS: ${searchLoopAttempts}`)
 
       if (searchLoopAttempts !== 0) {
         await Promise.all(
@@ -110,7 +111,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
       // Used for both Cincinnati relevance and NSFW detection.
       // First run downloads ~85 MB; subsequent runs use the local HF cache.
       await initClassifiers()
-      console.log(
+      logger.info(
         'Startup complete — ML classifiers ready, accepting feed requests.',
       )
     })
@@ -123,7 +124,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
     const existing = await this.db.selectFrom('actor').selectAll().execute()
 
     this.cincinnatiUsers = existing.map((actor) => actor)
-    console.log(
+    logger.info(
       `Loaded ${this.cincinnatiUsers.length} Cincinnati actor(s) into memory.`,
     )
 
@@ -136,15 +137,15 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
   // This file is the manual moderation list — add a DID to immediately
   // suppress all future posts from that user.
   private async getBlockedUsers() {
-    console.log('Getting blocked users...')
+    logger.info('Getting blocked users...')
 
     try {
       const filePath = path.join(process.cwd(), '/blocked-users.txt')
-      console.log(`Reading blocked users from: ${filePath}`)
+      logger.debug(`Reading blocked users from: ${filePath}`)
       const fileContent = await fs.readFile(filePath, 'utf-8')
       const actors = fileContent.trim().split('\n').filter(Boolean)
 
-      console.log(`Blocked users found: ${actors.length}`)
+      logger.info(`Blocked users found: ${actors.length}`)
       this.blockedUsers.push(...actors)
 
       if (actors.length > 0) {
@@ -152,14 +153,14 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
           .deleteFrom('post')
           .where('author', 'in', actors)
           .executeTakeFirst()
-        console.log(
+        logger.info(
           `Removed ${numDeletedRows} post(s) from blocked users in blocked-users.txt.`,
         )
       }
 
       await Promise.all(
         actors.map(async (actor) => {
-          console.debug(`Blocking actor: ${actor}`)
+          logger.debug(`Blocking actor: ${actor}`)
           await this.db
             .updateTable('actor')
             .set({ blocked: 1 })
@@ -168,9 +169,9 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
         }),
       )
 
-      console.log('Blocked users successfully loaded.')
+      logger.info('Blocked users successfully loaded.')
     } catch (err) {
-      console.error('Failed to get blocked users:', err)
+      logger.error('Failed to get blocked users:', err)
     }
   }
 
@@ -187,11 +188,11 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
           .where('author', 'in', dids)
           .executeTakeFirst()
         if (numDeletedRows > 0) {
-          console.log(`Removed ${numDeletedRows} post(s) from muted accounts.`)
+          logger.info(`Removed ${numDeletedRows} post(s) from muted accounts.`)
         }
       }
     } catch (err) {
-      console.error('Failed to refresh lists:', err)
+      logger.error('Failed to refresh lists:', err)
     }
   }
 
@@ -208,16 +209,16 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
   // social-graph expansion ("people who follow Cincinnati users may also be
   // Cincinnati users").
   private async populateFollowers() {
-    console.log('Populating followers...')
+    logger.info('Populating followers...')
     try {
       const actors = await this.db.selectFrom('actor').select(['did']).execute()
-      console.log(`Fetched ${actors.length} actors from the database.`)
+      logger.info(`Fetched ${actors.length} actors from the database.`)
 
       await Promise.all(
         actors.map(async ({ did }) => {
-          console.debug(`Fetching followers for DID: ${did}`)
+          logger.debug(`Fetching followers for DID: ${did}`)
           const followers = await this.fetchFollowers(did)
-          console.debug(
+          logger.debug(
             `Fetched ${followers.followers.length} followers for DID: ${did}`,
           )
 
@@ -225,35 +226,33 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
         }),
       )
 
-      console.log('Successfully populated followers and following lists.')
+      logger.info('Successfully populated followers and following lists.')
     } catch (err) {
-      console.error('Failed to populate followers:', err)
+      logger.error('Failed to populate followers:', err)
     }
   }
 
   private async fetchFollowers(did: string): Promise<FollowerMap> {
-    console.debug(`Fetching followers for DID: ${did}`)
+    logger.debug(`Fetching followers for DID: ${did}`)
     try {
       const { data } = await this.agent.api.app.bsky.graph.getFollowers({
         actor: did,
         limit: 100, // Adjust as needed
       })
 
-      console.debug(
-        `Fetched ${data.followers.length} followers for DID: ${did}`,
-      )
+      logger.debug(`Fetched ${data.followers.length} followers for DID: ${did}`)
       return {
         userDid: did,
         followers: data.followers,
       }
     } catch (err) {
-      console.error(`Failed to fetch followers for ${did}:`, err)
+      logger.error(`Failed to fetch followers for ${did}:`, err)
       return { userDid: did, followers: [] }
     }
   }
 
   private async fetchProfiles(dids: string[]) {
-    console.debug(`Fetching profiles for ${dids.length} DIDs.`)
+    logger.debug(`Fetching profiles for ${dids.length} DIDs.`)
     const chunks = chunkArray(dids, 25)
     const profiles: AppBskyActorDefs.ProfileView[] = []
 
@@ -262,7 +261,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
         const response = await this.agent.getProfiles({ actors: chunk })
         profiles.push(...response.data.profiles)
       } catch (err) {
-        console.error('Failed to fetch profiles chunk:', err)
+        logger.error('Failed to fetch profiles chunk:', err)
       }
     }
 
@@ -278,14 +277,14 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
   // The number of times this runs is controlled by SEARCH_LOOP_ATTEMPTS;
   // additional iterations expand the graph further (followers-of-followers, etc.).
   private async SearchForCincinnatiUsers() {
-    console.log('Searching for Cincinnati users...')
+    logger.info('Searching for Cincinnati users...')
 
     await this.seedActorsFromFile()
     await this.populateFollowers()
 
     for (const followers of this.followersMap) {
       const dids = followers.followers.map((f) => f.did)
-      console.debug(`Processing ${dids.length} DIDs from followers.`)
+      logger.debug(`Processing ${dids.length} DIDs from followers.`)
       const profiles = await this.fetchProfiles(dids)
 
       for (const profile of profiles) {
@@ -300,12 +299,12 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
           .executeTakeFirst()
 
         if (exists) {
-          console.debug(`Actor ${profile.did} already exists. Skipping insert.`)
+          logger.debug(`Actor ${profile.did} already exists. Skipping insert.`)
           continue
         }
 
         if (isCincinnatiUser(profile.description)) {
-          console.debug(`Inserting actor: ${profile.did}`)
+          logger.debug(`Inserting actor: ${profile.did}`)
           await this.db
             .insertInto('actor')
             .values({
@@ -319,25 +318,25 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
         }
       }
     }
-    console.log('Completed search for Cincinnati users.')
+    logger.info('Completed search for Cincinnati users.')
   }
 
   // Reads cincinnati-users.json and inserts each entry into the actor table.
   // These are the manually curated seed accounts that bootstrap the
   // social-graph discovery in SearchForCincinnatiUsers.
   private async seedActorsFromFile() {
-    console.log('Seeding actors from file...')
+    logger.info('Seeding actors from file...')
     try {
       const filePath = path.join(process.cwd(), 'cincinnati-users.json')
-      console.log(`Reading actors from: ${filePath}`)
+      logger.debug(`Reading actors from: ${filePath}`)
       const fileContent = await fs.readFile(filePath, 'utf-8')
       const actors: { did: string; name: string; bio: string }[] =
         JSON.parse(fileContent)
-      console.log(`Found ${actors.length} actors to seed.`)
+      logger.info(`Found ${actors.length} actors to seed.`)
 
       await Promise.all(
         actors.map(async ({ did, name, bio }) => {
-          console.debug(`Seeding actor DID: ${did}`)
+          logger.debug(`Seeding actor DID: ${did}`)
           try {
             await this.db
               .insertInto('actor')
@@ -349,28 +348,28 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
               })
               .onConflict((oc) => oc.doNothing())
               .execute()
-            console.debug(`Successfully seeded actor ${did}.`)
+            logger.debug(`Successfully seeded actor ${did}.`)
           } catch (err) {
-            console.error(`Failed to seed actor ${did}:`, err)
+            logger.error(`Failed to seed actor ${did}:`, err)
           }
         }),
       )
-      console.log('Successfully seeded actors from file.')
+      logger.info('Successfully seeded actors from file.')
     } catch (err) {
-      console.error('Failed to seed actors:', err)
+      logger.error('Failed to seed actors:', err)
     }
   }
 
   async initializeAgent() {
-    console.log('Initializing agent login...')
+    logger.info('Initializing agent login...')
     try {
       await this.agent.login({
         identifier: process.env.FEEDGEN_PUBLISHER_DID!,
         password: process.env.BLUESKY_PASSWORD!,
       })
-      console.log('Agent successfully logged in.')
+      logger.info('Agent successfully logged in.')
     } catch (err) {
-      console.error('Failed to initialize agent:', err)
+      logger.error('Failed to initialize agent:', err)
     }
   }
 
@@ -396,9 +395,9 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
       try {
         this.db.deleteFrom('post').where('uri', 'in', [postUri]).execute()
         this.stats.deleted++
-        console.trace('Deleted post:', postUri)
+        logger.trace('Deleted post:', postUri)
       } catch (err) {
-        console.error('Failed to delete post:', err)
+        logger.error('Failed to delete post:', err)
       }
       return
     }
@@ -440,9 +439,9 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
             .onConflict((oc) => oc.doNothing())
             .execute()
           this.stats.whitelistedPassed++
-          console.log(`[WHITELISTED] ${postUri}`)
+          logger.debug(`[WHITELISTED] ${postUri}`)
         } catch (err) {
-          console.error('Failed to insert whitelisted post:', err)
+          logger.error('Failed to insert whitelisted post:', err)
         }
       }
       this.db
@@ -469,7 +468,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
     // Skip blocked authors
     if (this.blockedUsers.includes(author) || (actor && actor.blocked)) {
       this.stats.rejectedBlocked++
-      console.log(
+      logger.debug(
         `[${postUri}] Post blocked — author is on the blocked list (did=${author})`,
       )
       return
@@ -478,14 +477,16 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
     // Skip muted authors
     if (mutedDids.has(author)) {
       this.stats.rejectedMuted++
-      console.log(`[${postUri}] Post blocked — author is muted (did=${author})`)
+      logger.debug(
+        `[${postUri}] Post blocked — author is muted (did=${author})`,
+      )
       return
     }
 
     // Fast label-based NSFW check (no ML cost)
     if (isNSFW(record.labels as any)) {
       this.stats.rejectedLabelNSFW++
-      console.log(
+      logger.debug(
         `[${postUri}] Post blocked — self-labelled NSFW (author=${author})`,
       )
       return
@@ -503,7 +504,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
 
     if (mlNSFW) {
       this.stats.rejectedMLNSFW++
-      console.log(
+      logger.debug(
         `[${postUri}] Post blocked — ML flagged as NSFW (mlScore=${mlScore.toFixed(3)})`,
       )
       return
@@ -512,7 +513,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
     // Unknown-author posts must clear the Cincinnati relevance threshold
     if (!actor && mlScore < CINCINNATI_THRESHOLD) {
       this.stats.rejectedThreshold++
-      console.log(
+      logger.debug(
         `[${postUri}] Post blocked — below Cincinnati threshold (mlScore=${mlScore.toFixed(3)}, threshold=${CINCINNATI_THRESHOLD})`,
       )
       return
@@ -540,7 +541,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
     if (validPost) {
       postsToCreate.push(validPost)
     } else {
-      console.error('Post validation failed for uri:', postUri)
+      logger.error('Post validation failed for uri:', postUri)
     }
 
     if (postsToCreate.length > 0) {
@@ -551,11 +552,11 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
           .onConflict((oc) => oc.doNothing())
           .execute()
         this.stats.inserted += postsToCreate.length
-        console.log(
+        logger.debug(
           `[ALLOWED] ${postsToCreate.map((p) => `${p.uri} (mlScore=${p.mlScore !== null ? p.mlScore.toFixed(3) : 'n/a'})`).join(', ')}`,
         )
       } catch (err) {
-        console.error('Failed to create posts:', err)
+        logger.error('Failed to create posts:', err)
       }
     }
 
@@ -583,7 +584,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
       rejectedLanguage,
       deleted,
     } = this.stats
-    console.log(
+    logger.info(
       `[Hourly Summary] ` +
         `allowed=${inserted} | ` +
         `whitelisted=${whitelistedPassed} | ` +
@@ -621,11 +622,11 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
       .executeTakeFirst()
 
     if (!res) {
-      console.warn('⚠️ sub_state row not found — will start from live head.')
+      logger.warn('⚠️ sub_state row not found — will start from live head.')
       return {}
     }
 
-    console.log('✅ Loaded cursor (time_us):', res.cursor)
+    logger.info('✅ Loaded cursor (time_us):', res.cursor)
     return { cursor: res.cursor }
   }
 }

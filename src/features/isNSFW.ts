@@ -5,6 +5,7 @@
 
 import { ComAtprotoLabelDefs } from '@atproto/api'
 import { SelfLabels } from '../lexicon/types/com/atproto/label/defs'
+import { logger } from '../utils/helpers'
 
 export const isNSFW = (
   postLabels:
@@ -16,7 +17,7 @@ export const isNSFW = (
     | undefined,
 ): boolean => {
   if (postLabels) {
-    console.log('Post labels found:', postLabels)
+    logger.debug('Post labels found:', postLabels)
     const labels = postLabels.values as
       | ComAtprotoLabelDefs.SelfLabel[]
       | undefined
@@ -34,7 +35,7 @@ export const isNSFW = (
         ].includes(label.val),
       )
     ) {
-      console.log('Post contains blocked labels, skipping')
+      logger.debug('Post contains blocked labels, skipping')
       return true
     }
   }
