@@ -48,6 +48,8 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
   private fileHandle: fs.FileHandle | null = null
   // DIDs from blocked-users.txt — these authors' posts are always skipped
   private blockedUsers: string[] = []
+  // DIDs muted by the feed publisher account — their posts are skipped and purged
+  private mutedUsers = new Set<string>()
   // Social graph cache built during SearchForCincinnatiUsers
   private followersMap: FollowerMap[] = []
   // In-memory copy of the actor table used for O(n) author lookups per event
@@ -66,6 +68,8 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
     this.ready = this.initializeAgent().then(async () => {
       console.log('Agent initialized.')
       await this.getBlockedUsers()
+      await this.loadMutes()
+      setInterval(() => this.loadMutes(), 10 * 60 * 1000)
 
       console.log(process.env.SEARCH_LOOP_ATTEMPTS)
 
@@ -151,6 +155,44 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
       console.log('Blocked users successfully loaded.')
     } catch (err) {
       console.error('Failed to get blocked users:', err)
+    }
+  }
+
+  // Fetches all accounts muted by the feed publisher via app.bsky.graph.getMutes,
+  // deletes any of their existing posts from the DB, and refreshes the in-memory
+  // mutedUsers set. Called at startup and every 10 minutes.
+  private async loadMutes() {
+    console.log('Loading muted accounts...')
+    try {
+      const freshMutes = new Set<string>()
+      let cursor: string | undefined
+
+      do {
+        const res = await this.agent.api.app.bsky.graph.getMutes({
+          limit: 100,
+          cursor,
+        })
+        for (const actor of res.data.mutes) {
+          freshMutes.add(actor.did)
+        }
+        cursor = res.data.cursor
+      } while (cursor)
+
+      this.mutedUsers = freshMutes
+      console.log(`Loaded ${this.mutedUsers.size} muted account(s).`)
+
+      if (this.mutedUsers.size > 0) {
+        const mutedDids = Array.from(this.mutedUsers)
+        const { numDeletedRows } = await this.db
+          .deleteFrom('post')
+          .where('author', 'in', mutedDids)
+          .executeTakeFirst()
+        if (numDeletedRows > 0) {
+          console.log(`Removed ${numDeletedRows} post(s) from muted accounts.`)
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load mutes:', err)
     }
   }
 
@@ -394,6 +436,11 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
     // Skip blocked authors
     if (this.blockedUsers.includes(author) || (actor && actor.blocked)) {
       console.log('Author is blocked, skipping post')
+      return
+    }
+
+    // Skip muted authors
+    if (this.mutedUsers.has(author)) {
       return
     }
 
