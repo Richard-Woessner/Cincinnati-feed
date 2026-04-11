@@ -8,7 +8,7 @@ export const mutedDids = new Set<string>()
 export const whitelistedDids = new Set<string>()
 
 const WHITELIST_URI =
-  'at://cincyfeed.bsky.social/app.bsky.graph.list/3mjahfqwzun2y'
+  'at://did:plc:irb5eewgcqfmr6ywr6wk6fwl/app.bsky.graph.list/3mjahfqwzun2y'
 
 // Refreshes both the mutes and whitelist sets in parallel.
 // Call at startup and periodically (e.g. every 10 minutes).
