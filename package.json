@@ -12,6 +12,8 @@
     "setup-models": "ts-node scripts/setup-models.ts",
     "backfill": "ts-node scripts/backfillPosts.ts",
     "backfill:names": "ts-node scripts/backfillActorNames.ts",
+    "backfill:follows": "ts-node scripts/backfillFollows.ts",
+    "backfill:follows:dry-run": "ts-node scripts/backfillFollows.ts --dry-run",
     "start": "ts-node src/index.ts",
     "build": "tsc"
   },

@@ -10,6 +10,10 @@ const PROFILE_CINCINNATI_THRESHOLD = parseFloat(
   process.env.PROFILE_CINCINNATI_THRESHOLD ?? '0.6',
 )
 
+const FOLLOW_CINCINNATI_THRESHOLD = parseFloat(
+  process.env.FOLLOW_CINCINNATI_THRESHOLD ?? '0.9',
+)
+
 export async function handleCincinnatiAuthor(
   db: Database,
   agent: AtpAgent,
@@ -66,6 +70,20 @@ export async function handleCincinnatiAuthor(
       description: sanitizeString(bio),
       blocked: 0,
     })
+
+    if (bioScore >= FOLLOW_CINCINNATI_THRESHOLD) {
+      try {
+        await agent.api.app.bsky.graph.follow.create(
+          { repo: process.env.FEEDGEN_PUBLISHER_DID! },
+          { subject: did, createdAt: new Date().toISOString() },
+        )
+        logger.info(
+          `[${did}] Auto-followed — Cincinnati bio score ${bioScore.toFixed(3)} >= ${FOLLOW_CINCINNATI_THRESHOLD}`,
+        )
+      } catch (followErr) {
+        logger.error(`[${did}] Failed to auto-follow:`, followErr)
+      }
+    }
 
     const filePath = './cincinnati-users.json'
     const fileUsers = JSON.parse(
